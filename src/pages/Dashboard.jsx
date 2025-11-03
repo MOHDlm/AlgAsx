@@ -7,11 +7,18 @@ import PerformanceChart from "../components/dashboard/PerformanceChart";
 import RecentActivity from "../components/dashboard/RecentActivity";
 
 import { getProviderAndSigner, getFactoryContract } from "@/lib/web3";
-import { TOKEN_CONTRACT_ADDRESS } from "@/constants";
 import { ethers } from "ethers";
 
 
-import { TOKEN_CONTRACT_ABI } from "@/constants";
+
+
+import { 
+  TOKEN_CONTRACT_ADDRESS,
+  TOKEN_CONTRACT_ABI,
+  FACTORY_CONTRACT_ADDRESS,
+  FACTORY_CONTRACT_ABI  
+} from "@/constants";
+
 
 
 
