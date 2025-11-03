@@ -1,5 +1,5 @@
 
-export const TOKEN_CONTRACT_ADDRESS = "0x9e324C0b2553822a85c38504858263Cba9f3d32A"; 
+export const TOKEN_CONTRACT_ADDRESS = import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS ||  "0x9e324C0b2553822a85c38504858263Cba9f3d32A"; 
 export const TOKEN_CONTRACT_ABI = [ 
 
 	
@@ -471,7 +471,7 @@ export const TOKEN_CONTRACT_ABI = [
  ];
 
 // 🏗️ عقد المصنع (CampaignFactory)
-export const FACTORY_CONTRACT_ADDRESS = "0x103e5A0Bb788eB5A9E1d304681c3c1c216D1278A"; 
+export const FACTORY_CONTRACT_ADDRESS = import.meta.env.VITE_FACTORY_CONTRACT_ADDRESS ||  "0x103e5A0Bb788eB5A9E1d304681c3c1c216D1278A"; 
 export const FACTORY_CONTRACT_ABI = [ 
 
 	
