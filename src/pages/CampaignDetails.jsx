@@ -23,7 +23,13 @@ const CampaignDetails = () => {
     const loadCampaign = async () => {
       try {
         if (!window.ethereum) throw new Error("🦊 Please install MetaMask");
-
+          
+          if (!address || address === "undefined") {
+            console.warn("⚠️ No valid address, skipping load");
+            setLoading(false);
+            return;
+          }
+        
         const provider = new ethers.BrowserProvider(window.ethereum);
         const contract = new ethers.Contract(address, CAMPAIGN_CONTRACT_ABI, provider);
 
