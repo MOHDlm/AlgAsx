@@ -1,6 +1,4 @@
-// constants.js
 
-// 🪙 عقد التوكن (TokenERC20)
 export const TOKEN_CONTRACT_ADDRESS = "0x9e324C0b2553822a85c38504858263Cba9f3d32A"; 
 export const TOKEN_CONTRACT_ABI = [ 
 
