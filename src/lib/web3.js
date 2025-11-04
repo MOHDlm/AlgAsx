@@ -7,12 +7,70 @@ import {
   FACTORY_CONTRACT_ABI,
 } from "../constants";
 
+// ✅ متغير لمنع الطلبات المتكررة
+let isConnecting = false;
+let connectionTimeout = null;
+
 // 🧠 إنشاء اتصال بالمحفظة
 export async function getProviderAndSigner() {
-  if (!window.ethereum) throw new Error("❌ الرجاء تثبيت MetaMask أولاً.");
-  const provider = new ethers.BrowserProvider(window.ethereum);
-  const signer = await provider.getSigner();
-  return { provider, signer };
+  // ✅ تحقق إذا كان هناك اتصال قيد التنفيذ
+  if (isConnecting) {
+    throw new Error("⏳ الاتصال قيد التنفيذ، يرجى الانتظار أو إغلاق نافذة MetaMask المفتوحة");
+  }
+
+  if (!window.ethereum) {
+    throw new Error("❌ الرجاء تثبيت MetaMask أولاً.");
+  }
+
+  try {
+    // ✅ ضع علامة البدء
+    isConnecting = true;
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    
+    // ✅ تحقق أولاً إذا كان متصل بالفعل
+    let accounts = [];
+    try {
+      accounts = await provider.send("eth_accounts", []);
+    } catch (error) {
+      console.log("لا توجد حسابات متصلة بعد");
+    }
+
+    // إذا لم يكن هناك حسابات متصلة، اطلب الاتصال
+    if (accounts.length === 0) {
+      // ✅ إضافة timeout للحماية من التعليق
+      connectionTimeout = setTimeout(() => {
+        isConnecting = false;
+        console.log("⏱️ انتهت مهلة الاتصال");
+      }, 30000); // 30 ثانية
+
+      accounts = await provider.send("eth_requestAccounts", []);
+      clearTimeout(connectionTimeout);
+    }
+
+    const signer = await provider.getSigner();
+    return { provider, signer };
+
+  } catch (error) {
+    console.error("❌ خطأ في الاتصال بـ MetaMask:", error);
+    
+    // رسائل خطأ واضحة
+    if (error.code === -32002) {
+      throw new Error("⏳ يوجد طلب اتصال قيد التنفيذ. يرجى فتح MetaMask والموافقة على الطلب أو إغلاق النافذة المفتوحة");
+    } else if (error.code === 4001) {
+      throw new Error("❌ تم رفض الاتصال من قبل المستخدم");
+    }
+    
+    throw error;
+  } finally {
+    // ✅ أزل العلامة بعد 2 ثانية لضمان عدم التعليق الدائم
+    if (connectionTimeout) {
+      clearTimeout(connectionTimeout);
+    }
+    setTimeout(() => {
+      isConnecting = false;
+    }, 2000);
+  }
 }
 
 // 🪙 عقد التوكن
@@ -37,43 +95,4 @@ export function getFactoryContract(signerOrProvider) {
   🌉 عملية الاستثمار أو التفاعل مع المصنع
   (دمج بين التوكن والمصنع)
 */
-export async function investInCampaign(amountETH) {
-  const { signer } = await getProviderAndSigner();
-
-  const token = getTokenContract(signer);
-  const factory = getFactoryContract(signer);
-
-  // ✅ تحقق من وجود حملة نشطة
-  const activeCampaign = await factory.getActiveCampaign();
-  if (!activeCampaign || activeCampaign === ethers.ZeroAddress) {
-    throw new Error("🚫 لا توجد حملة نشطة حالياً.");
-  }
-
-  // ✅ إرسال الاستثمار إلى المصنع مباشرة (هو الذي يدير الاستثمار)
-  const tx = await factory.investInActiveCampaign({
-    value: ethers.parseEther(amountETH.toString()),
-  });
-
-  await tx.wait();
-
-  console.log("✅ تم الاستثمار بنجاح:", tx.hash);
-  return tx;
-}
-
-// ✳️ مثال إضافي: إنشاء حملة جديدة (اختياري)
-export async function createNewCampaign(goal, duration, title, description, imageUrl) {
-  const { signer } = await getProviderAndSigner();
-  const factory = getFactoryContract(signer);
-
-  const tx = await factory.createCampaign(
-    ethers.parseEther(goal.toString()),
-    duration,
-    title,
-    description,
-    imageUrl
-  );
-
-  await tx.wait();
-  console.log("🎯 تم إنشاء حملة جديدة:", tx.hash);
-  return tx;
-}
+export async function investInCampaign(am
