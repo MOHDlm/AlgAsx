@@ -1,6 +1,12 @@
 
+<<<<<<< Updated upstream
 export const TOKEN_CONTRACT_ADDRESS = import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS ||  "0x9e324C0b2553822a85c38504858263Cba9f3d32A"; 
 export const TOKEN_CONTRACT_ABI = [ 
+=======
+// 🪙 عقد التوكن (TokenERC20)
+export const TOKEN_CONTRACT_ADDRESS =  import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS ||  "0x9e324C0b2553822a85c38504858263Cba9f3d32A"; // ضع العنوان الكامل هنا
+export const TOKEN_CONTRACT_ABI = [ /* ABI الخاص بـ TokenERC20 */
+>>>>>>> Stashed changes
 
 	
 	
@@ -471,8 +477,14 @@ export const TOKEN_CONTRACT_ABI = [
  ];
 
 // 🏗️ عقد المصنع (CampaignFactory)
+<<<<<<< Updated upstream
 export const FACTORY_CONTRACT_ADDRESS = import.meta.env.VITE_FACTORY_CONTRACT_ADDRESS ||  "0x103e5A0Bb788eB5A9E1d304681c3c1c216D1278A"; 
 export const FACTORY_CONTRACT_ABI = [ 
+=======
+export const FACTORY_CONTRACT_ADDRESS =   import.meta.env.VITE_FACTORY_CONTRACT_ADDRESS || 
+"0x103e5A0Bb788eB5A9E1d304681c3c1c216D1278A"; // ضع العنوان الكامل
+export const FACTORY_CONTRACT_ABI = [ /* ABI الخاص بـ CampaignFactory */
+>>>>>>> Stashed changes
 
 	
 	

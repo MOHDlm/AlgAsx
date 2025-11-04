@@ -2,9 +2,11 @@ import React, { useState } from "react";
 import { ethers } from "ethers";
 import { useNavigate } from "react-router-dom";
 import {
+ TOKEN_CONTRACT_ADDRESS, 
+  TOKEN_CONTRACT_ABI,
   FACTORY_CONTRACT_ADDRESS,
   FACTORY_CONTRACT_ABI,
-  TOKEN_CONTRACT_ADDRESS,
+  CAMPAIGN_CONTRACT_ABI 
 } from "../constants.js";
 
 const CreateCampaign = () => {

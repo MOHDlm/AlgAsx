@@ -37,7 +37,13 @@ const navigate = useNavigate();
 
         // ✅ استدعاء الدالة الصحيحة التي تُرجع Structs لكل حملة
         const campaignsData = await factory.getAllCampaigns();
-        console.log("📦 Raw campaigns:", campaignsData);
+        
+
+         // console.log("🔍 First campaign raw:", campaignsData[0]);
+    //console.log("🔍 campaignAddress field:", campaignsData[0].campaignAddress);
+    //console.log("🔍 All fields:", Object.keys(campaignsData[0]));
+
+
 
         const campaigns = campaignsData.map((c, i) => ({
           id: i + 1,
@@ -46,7 +52,7 @@ const navigate = useNavigate();
           image: c.image || "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
           token_price: Number(c.tokenWeiRate || 0),
           owner: c.owner,
-          contract: c.campaignAddress,
+contract: c.campaignAddress || c[0],
           created_date: new Date(Number(c.startAt) * 1000)
             .toISOString()
             .slice(0, 10),
@@ -55,6 +61,14 @@ const navigate = useNavigate();
         }));
 
         console.log("✅ Parsed campaigns:", campaigns);
+
+        console.log("✅ Parsed campaigns:", campaigns);
+
+// ✅ أضف هذا السطر هنا
+console.log("🔍 First campaign contract:", campaigns[0]?.contract);
+
+
+
         setProperties(campaigns);
       } catch (error) {
         console.error("❌ Error fetching campaigns:", error);
@@ -227,12 +241,19 @@ const navigate = useNavigate();
           </div>
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+           
+           
+           
+           
+           
             {filteredProperties.map((property) => (
               <div
                 key={property.id}
+                onClick={() => navigate(`/campaign/${property.contract}`, { state: { property } })}
+
                 
                 
-               onClick={() => navigate(`/campaign/${property.contract}`, { state: { property } })}
+
 
 
 
@@ -241,9 +262,17 @@ const navigate = useNavigate();
               >
                 <PropertyCard property={property} />
                 <div className="p-4 border-t border-gray-100 flex justify-between items-center">
+
                   <p className="text-sm text-gray-500 truncate">
-                    {property.contract}
-                  </p>
+                        {property.contract}
+                      </p>
+
+                
+                                    
+
+
+
+
                   <Button
                     size="sm"
                     className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
@@ -262,6 +291,10 @@ const navigate = useNavigate();
                 </div>
               </div>
             ))}
+
+
+
+            
           </div>
         )}
       </div>

@@ -59,7 +59,7 @@ function PagesContent() {
         <Route path="/create" element={<CreateCampaignPage />} />
 
         {/* 📜 صفحة تفاصيل حملة معينة */}
-        <Route path="/campaign/:address" element={<CampaignDetails />} />
+<Route path="/campaign/:address" element={<CampaignDetails />} />
       </Routes>
     </Layout>
   );

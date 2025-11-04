@@ -10,6 +10,7 @@ import { getProviderAndSigner, getFactoryContract } from "@/lib/web3";
 import { ethers } from "ethers";
 
 
+<<<<<<< Updated upstream
 
 
 import { 
@@ -19,8 +20,18 @@ import {
   FACTORY_CONTRACT_ABI  
 } from "@/constants";
 
+=======
+>>>>>>> Stashed changes
 
 
+// ✅ استورد كل شيء من constants
+import { 
+  TOKEN_CONTRACT_ADDRESS,
+  TOKEN_CONTRACT_ABI,
+  FACTORY_CONTRACT_ADDRESS,
+  FACTORY_CONTRACT_ABI,
+  CAMPAIGN_CONTRACT_ABI  // ستحتاجها لاحقاً
+} from "@/constants"; // أو "../constants" حسب مكان الملف
 
 
 
@@ -29,15 +40,10 @@ export default function DashboardPage() {
 
 
   const [AlgAsxokenBalance, setAlgAsxokenBalance] = useState("..."); 
-
-
   const [user, setUser] = useState(null);
   const [investments, setInvestments] = useState([]);
   const [properties, setProperties] = useState([]);
   const [allInvestments, setAllInvestments] = useState([]);
-
-
-
 const [showForm, setShowForm] = useState(false);
 const [formData, setFormData] = useState({
   title: "",
@@ -68,6 +74,11 @@ const [formData, setFormData] = useState({
 
     // 🟢 الكود الجديد والمُحسّن لجلب الرصيد
     const fetchBlockchainData = async () => {
+      console.log("🔍 TOKEN_CONTRACT_ADDRESS:", TOKEN_CONTRACT_ADDRESS);
+      console.log("🔍 FACTORY_CONTRACT_ADDRESS:", FACTORY_CONTRACT_ADDRESS);
+
+
+
       console.log("🔍 Starting to fetch blockchain data...");
       
       if (!window.ethereum) {
