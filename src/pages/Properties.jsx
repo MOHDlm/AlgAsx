@@ -30,13 +30,18 @@ export default function PropertiesPage() {
   useEffect(() => {
     const fetchCampaigns = async () => {
       if (isRequestingAccounts) return; // لا تسمح بالتكرار
+setIsRequestingAccounts(true);
 
       try {
         setIsRequestingAccounts(true); // بداية الطلب
         setIsLoading(true);
 
         const { signer } = await getProviderAndSigner(); // هنا قد يحصل الخطأ عند التكرار
+       
+        
         const factory = getFactoryContract(signer);
+        
+        const [isRequestingAccounts, setIsRequestingAccounts] = useState(false);
 
         const campaignsData = await factory.getAllCampaigns();
         // معالجة الحملات...
