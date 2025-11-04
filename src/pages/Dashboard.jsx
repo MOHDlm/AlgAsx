@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp, Building2, Coins, Calendar, Users, DollarSign } from "lucide-react";
@@ -9,76 +8,38 @@ import RecentActivity from "../components/dashboard/RecentActivity";
 import { getProviderAndSigner, getFactoryContract } from "@/lib/web3";
 import { ethers } from "ethers";
 
-
-<<<<<<< Updated upstream
-
-
-import { 
-  TOKEN_CONTRACT_ADDRESS,
-  TOKEN_CONTRACT_ABI,
-  FACTORY_CONTRACT_ADDRESS,
-  FACTORY_CONTRACT_ABI  
-} from "@/constants";
-
-=======
->>>>>>> Stashed changes
-
-
 // ✅ استورد كل شيء من constants
 import { 
   TOKEN_CONTRACT_ADDRESS,
   TOKEN_CONTRACT_ABI,
   FACTORY_CONTRACT_ADDRESS,
   FACTORY_CONTRACT_ABI,
-  CAMPAIGN_CONTRACT_ABI  // ستحتاجها لاحقاً
-} from "@/constants"; // أو "../constants" حسب مكان الملف
-
-
+  CAMPAIGN_CONTRACT_ABI
+} from "@/constants";
 
 export default function DashboardPage() {
-
-
-
   const [AlgAsxokenBalance, setAlgAsxokenBalance] = useState("..."); 
   const [user, setUser] = useState(null);
   const [investments, setInvestments] = useState([]);
   const [properties, setProperties] = useState([]);
   const [allInvestments, setAllInvestments] = useState([]);
-const [showForm, setShowForm] = useState(false);
-const [formData, setFormData] = useState({
-  title: "",
-  description: "",
-  goal: "",
-  durationMinutes: "",
-  tokenWeiRate: "",
-  image: "",
-});
-
-
-
-
-
-
-
-
-
-
-
-
-
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    goal: "",
+    durationMinutes: "",
+    tokenWeiRate: "",
+    image: "",
+  });
 
   useEffect(() => {
-    // ... (الكود الخاص بالبيانات الوهمية يبقى كما هو)
     setUser({ full_name: "Local Investor", email: "user@localhost" });
-    // ...
 
     // 🟢 الكود الجديد والمُحسّن لجلب الرصيد
     const fetchBlockchainData = async () => {
       console.log("🔍 TOKEN_CONTRACT_ADDRESS:", TOKEN_CONTRACT_ADDRESS);
       console.log("🔍 FACTORY_CONTRACT_ADDRESS:", FACTORY_CONTRACT_ADDRESS);
-
-
-
       console.log("🔍 Starting to fetch blockchain data...");
       
       if (!window.ethereum) {
@@ -88,7 +49,7 @@ const [formData, setFormData] = useState({
       }
 
       try {
-        // الخطوة 1: اطلب الاتصال بـ MetaMask (حتى لو كان متصلاً بالفعل)
+        // الخطوة 1: اطلب الاتصال بـ MetaMask
         await window.ethereum.request({ method: 'eth_requestAccounts' });
         
         // الخطوة 2: أنشئ provider جديد
@@ -97,9 +58,9 @@ const [formData, setFormData] = useState({
         // الخطوة 3: احصل على الـ signer
         const signer = await provider.getSigner();
         
-        // الخطوة 4 (الأهم): اطبع العنوان للتأكد
+        // الخطوة 4: اطبع العنوان للتأكد
         const connectedAccount = await signer.getAddress();
-        console.log("✅ Connected Account:", connectedAccount); // <--- هذا السطر سيخبرنا بالحقيقة
+        console.log("✅ Connected Account:", connectedAccount);
 
         // الخطوة 5: أنشئ نسخة من العقد
         const tokenContract = new ethers.Contract(
@@ -116,7 +77,7 @@ const [formData, setFormData] = useState({
         const formattedBalance = ethers.formatUnits(balance, 18);
         console.log("💰 Formatted Balance:", formattedBalance);
         
-        setAlgAsxokenBalance(parseFloat(formattedBalance).toFixed(1)); // .toFixed(1) ليتطابق مع "21.0"
+        setAlgAsxokenBalance(parseFloat(formattedBalance).toFixed(1));
 
       } catch (error) {
         console.error("❌ Error during fetchBlockchainData:", error);
@@ -125,163 +86,122 @@ const [formData, setFormData] = useState({
     };
 
     fetchBlockchainData();
-    
   }, []);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-const handleCreateDemoProperty = async (formData) => {
-  try {
-    const { signer } = await getProviderAndSigner();
-    const factory = getFactoryContract(signer);
-
-    const tokenAddress = TOKEN_CONTRACT_ADDRESS;
-    const goal = ethers.parseEther(formData.goal || "1");
-    const durationMinutes = parseInt(formData.durationMinutes || "1440");
-    const tokenWeiRate = parseInt(formData.tokenWeiRate || "1000");
-    const title = formData.title || "Untitled Property";
-    const description = formData.description || "No description provided.";
-    const image = formData.image || "https://via.placeholder.com/400";
-
-
-
-
-
-
-
-
-
-const tx = await factory.createFullCampaign(
-  tokenAddress,
-  goal,
-  durationMinutes,
-  tokenWeiRate,
-  title,
-  description,
-  image
-);
-
-console.log("📤 Transaction sent:", tx);
-
-const receipt = await tx.wait();
-console.log("📬 Transaction mined:", receipt);
-
-// ✅ عرض معلومات أوضح للمستخدم
-alert(
-  `✅ Campaign created successfully!\n\n` +
-  `Transaction Hash: ${tx.hash || receipt?.hash}\n\n` +
-  `⏳ Please wait a few seconds for the campaign to appear on the blockchain list.`
-);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // إضافة المشروع الجديد لواجهة المستخدم
-    const newProperty = {
-      id: Date.now(),
-      name_en: title,
-      total_value: parseFloat(formData.goal || "1") * 1000,
-      annual_return: 7.5,
-      description,
-      image,
-    };
-
-    setProperties((prev) => [newProperty, ...prev]);
-  } catch (error) {
-    console.error("❌ Error:", error);
-    alert("⚠️ Failed to create campaign. See console for details.");
-  }
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-const handleFetchAllCampaigns = async () => {
-  try {
-    console.log("📡 Fetching all campaigns from factory...");
-    const { signer } = await getProviderAndSigner();
-    const factory = getFactoryContract(signer);
-
-    // استدعاء دالة من العقد
-    const campaigns = await factory.getAllCampaigns();
-
-    console.log("📋 الحملات الموجودة:", campaigns);
-
-    if (campaigns.length === 0) {
-      alert("🚫 لا توجد حملات بعد.");
-      return;
+  const handleCreateDemoProperty = async (formData) => {
+    try {
+      const { signer } = await getProviderAndSigner();
+      const factory = getFactoryContract(signer);
+
+      const tokenAddress = TOKEN_CONTRACT_ADDRESS;
+      const goal = ethers.parseEther(formData.goal || "1");
+      const durationMinutes = parseInt(formData.durationMinutes || "1440");
+      const tokenWeiRate = parseInt(formData.tokenWeiRate || "1000");
+      const title = formData.title || "Untitled Property";
+      const description = formData.description || "No description provided.";
+      const image = formData.image || "https://via.placeholder.com/400";
+
+      const tx = await factory.createFullCampaign(
+        tokenAddress,
+        goal,
+        durationMinutes,
+        tokenWeiRate,
+        title,
+        description,
+        image
+      );
+
+      console.log("📤 Transaction sent:", tx);
+
+      const receipt = await tx.wait();
+      console.log("📬 Transaction mined:", receipt);
+
+      alert(
+        `✅ Campaign created successfully!\n\n` +
+        `Transaction Hash: ${tx.hash || receipt?.hash}\n\n` +
+        `⏳ Please wait a few seconds for the campaign to appear on the blockchain list.`
+      );
+
+      // إضافة المشروع الجديد لواجهة المستخدم
+      const newProperty = {
+        id: Date.now(),
+        name_en: title,
+        total_value: parseFloat(formData.goal || "1") * 1000,
+        annual_return: 7.5,
+        description,
+        image,
+      };
+
+      setProperties((prev) => [newProperty, ...prev]);
+    } catch (error) {
+      console.error("❌ Error:", error);
+      alert("⚠️ Failed to create campaign. See console for details.");
     }
+  };
 
-    // عرضها في الواجهة مؤقتًا (مثلاً بالـ alert أو console)
-    let list = campaigns.map((addr, i) => `${i + 1}. ${addr}`).join("\n");
-    alert(`📦 ${campaigns.length} حملة موجودة:\n${list}`);
-  } catch (error) {
-    console.error("❌ خطأ أثناء جلب الحملات:", error);
-    alert("⚠️ فشل جلب الحملات من المصنع. تحقق من الاتصال أو الصلاحيات.");
-  }
-};
+  // ✅ الكود المحدّث لجلب جميع الحملات
+  const handleFetchAllCampaigns = async () => {
+    try {
+      console.log("📡 Fetching all campaigns from factory...");
+      const { signer } = await getProviderAndSigner();
+      const factory = getFactoryContract(signer);
 
+      // ✅ تحقق من الشبكة
+      const network = await signer.provider.getNetwork();
+      console.log("🌐 Connected to:", network.name, "Chain ID:", network.chainId);
 
+      // ✅ تحقق من وجود العقد
+      const code = await signer.provider.getCode(FACTORY_CONTRACT_ADDRESS);
+      if (code === "0x") {
+        alert(`❌ العقد غير موجود على هذه الشبكة!\n\nعنوان العقد: ${FACTORY_CONTRACT_ADDRESS}\nالشبكة: ${network.name}`);
+        return;
+      }
 
+      console.log("✅ العقد موجود على البلوكشين");
 
+      // ✅ استدعاء الدالة الصحيحة (نفس Properties.jsx)
+      const campaignsData = await factory.getAllCampaigns();
+      
+      console.log("📋 الحملات الموجودة (Raw):", campaignsData);
 
+      if (!campaignsData || campaignsData.length === 0) {
+        alert("🚫 لا توجد حملات بعد.");
+        return;
+      }
 
+      // ✅ تحويل البيانات لعرضها
+      const campaigns = campaignsData.map((c, i) => ({
+        id: i + 1,
+        title: c.title || `Campaign #${i + 1}`,
+        goal: ethers.formatEther(c.goal || 0),
+        contract: c.campaignAddress || c[0],
+        owner: c.owner,
+        startDate: new Date(Number(c.startAt) * 1000).toLocaleDateString(),
+      }));
 
+      console.log("✅ Parsed campaigns:", campaigns);
 
+      // عرضها بشكل أفضل
+      let list = campaigns.map((c) => 
+        `${c.id}. ${c.title}\n   📍 ${c.contract}\n   💰 Goal: ${c.goal} ETH\n   👤 Owner: ${c.owner.slice(0, 6)}...${c.owner.slice(-4)}\n   📅 ${c.startDate}`
+      ).join("\n\n");
+      
+      alert(`📦 ${campaigns.length} حملة موجودة:\n\n${list}`);
+      
+      // ✅ اختياري: حفظها في state لعرضها في الواجهة
+      setProperties(campaigns);
 
-
-
-
-
-
-
- 
+    } catch (error) {
+      console.error("❌ خطأ أثناء جلب الحملات:", error);
+      
+      // رسائل خطأ واضحة
+      if (error.message.includes("BAD_DATA")) {
+        alert("⚠️ العقد لا يُرجع بيانات صحيحة. تأكد من:\n1. أنك على الشبكة الصحيحة\n2. عنوان العقد صحيح\n3. العقد يحتوي على campaigns");
+      } else {
+        alert(`⚠️ خطأ: ${error.message}`);
+      }
+    }
+  };
 
   const totalInvested = investments.reduce((sum, inv) => sum + (inv.purchase_price || 0), 0);
   const totalTokens = investments.reduce((sum, inv) => sum + (inv.tokens_owned || 0), 0);
@@ -298,13 +218,6 @@ const handleFetchAllCampaigns = async () => {
 
   if (!user) {
     return (
-
-
-
-
-
-
-      
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 md:p-8 flex items-center justify-center">
         <Card className="max-w-md text-center shadow-lg">
           <CardHeader>
@@ -319,12 +232,6 @@ const handleFetchAllCampaigns = async () => {
   }
 
   return (
-
-
-
-
-
-    
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
@@ -333,208 +240,165 @@ const handleFetchAllCampaigns = async () => {
           <p className="text-slate-600 text-lg">Welcome back, {user.full_name || 'Investor'}</p>
         </div>
 
+        {/* Create Property Button */}
+        <div className="flex justify-end mb-8">
+          {!showForm ? (
+            <button
+              onClick={() => setShowForm(true)}
+              className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition-all"
+            >
+              🏠 Create Your Property
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowForm(false)}
+              className="bg-gray-500 hover:bg-gray-600 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition-all"
+            >
+              ❌ Cancel
+            </button>
+          )}
 
-
-
-
-{/* Create Property Button */}
-<div className="flex justify-end mb-8">
-  {!showForm ? (
-   
-  <button
-  onClick={() => setShowForm(true)}
-  className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition-all"
->
-  🏠 Create Your Property
-</button>
-
-
-
-  ) : (
-    <button
-      onClick={() => setShowForm(false)}
-      className="bg-gray-500 hover:bg-gray-600 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition-all"
-    >
-      ❌ Cancel
-    </button>
-  )}
-
-  <button
-    onClick={handleFetchAllCampaigns}
-    className="ml-4 bg-blue-500 hover:bg-blue-600 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition-all"
-  >
-    📋 View All Campaigns
-  </button>
-</div>
-
-
-
-
-
-
-
-
-
-
-{showForm && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-    <div className="bg-white rounded-2xl p-8 shadow-xl w-full max-w-lg relative">
-      <button
-        onClick={() => setShowForm(false)}
-        className="absolute top-3 right-3 text-gray-500 hover:text-red-600"
-      >
-        ✖
-      </button>
-
-      <h2 className="text-2xl font-bold mb-6 text-center text-slate-800">
-        🏗️ Create New Property
-      </h2>
-
-      <div className="flex flex-col gap-4">
-        <input
-          type="text"
-          placeholder="Title"
-          value={formData.title}
-          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-          className="border border-slate-300 p-3 rounded-lg"
-        />
-
-        <input
-          type="number"
-          placeholder="Goal (ETH)"
-          value={formData.goal}
-          onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
-          className="border border-slate-300 p-3 rounded-lg"
-        />
-
-        <input
-          type="number"
-          placeholder="Duration (minutes)"
-          value={formData.durationMinutes}
-          onChange={(e) => setFormData({ ...formData, durationMinutes: e.target.value })}
-          className="border border-slate-300 p-3 rounded-lg"
-        />
-
-        <input
-          type="number"
-          placeholder="Token Wei Rate"
-          value={formData.tokenWeiRate}
-          onChange={(e) => setFormData({ ...formData, tokenWeiRate: e.target.value })}
-          className="border border-slate-300 p-3 rounded-lg"
-        />
-
-        <input
-          type="text"
-          placeholder="Image URL"
-          value={formData.image}
-          onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-          className="border border-slate-300 p-3 rounded-lg"
-        />
-
-        <textarea
-          placeholder="Description"
-          value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          className="border border-slate-300 p-3 rounded-lg"
-          rows="3"
-        />
-      </div>
-
-      <div className="flex justify-end gap-3 mt-6">
-        <button
-          onClick={() => setShowForm(false)}
-          className="px-5 py-2 bg-gray-300 rounded-lg hover:bg-gray-400"
-        >
-          Cancel
-        </button>
-
-        <button
-          onClick={() => {
-            setShowForm(false);
-            handleCreateDemoProperty(formData);
-          }}
-          className="px-5 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
-        >
-          ✅ Submit Property
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-       {/* User Stats */}
-<div className="grid md:grid-cols-3 gap-6 mb-8">
-  {/* My Investments */}
-  <Card className="shadow-lg border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100">
-    <CardContent className="p-6">
-      <div className="flex items-center justify-between mb-3">
-        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-          <DollarSign className="w-6 h-6 text-white" />
+          <button
+            onClick={handleFetchAllCampaigns}
+            className="ml-4 bg-blue-500 hover:bg-blue-600 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition-all"
+          >
+            📋 View All Campaigns
+          </button>
         </div>
-      </div>
-      <p className="text-sm text-blue-700 mb-1">My Investments</p>
-      <p className="text-3xl font-bold text-blue-900">${totalInvested.toFixed(2)}</p>
-    </CardContent>
-  </Card>
 
-  {/* My Earnings */}
-  <Card className="shadow-lg border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100">
-    <CardContent className="p-6">
-      <div className="flex items-center justify-between mb-3">
-        <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-          <TrendingUp className="w-6 h-6 text-white" />
+        {/* Form Modal */}
+        {showForm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+            <div className="bg-white rounded-2xl p-8 shadow-xl w-full max-w-lg relative">
+              <button
+                onClick={() => setShowForm(false)}
+                className="absolute top-3 right-3 text-gray-500 hover:text-red-600"
+              >
+                ✖
+              </button>
+
+              <h2 className="text-2xl font-bold mb-6 text-center text-slate-800">
+                🏗️ Create New Property
+              </h2>
+
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  placeholder="Title"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  className="border border-slate-300 p-3 rounded-lg"
+                />
+
+                <input
+                  type="number"
+                  placeholder="Goal (ETH)"
+                  value={formData.goal}
+                  onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
+                  className="border border-slate-300 p-3 rounded-lg"
+                />
+
+                <input
+                  type="number"
+                  placeholder="Duration (minutes)"
+                  value={formData.durationMinutes}
+                  onChange={(e) => setFormData({ ...formData, durationMinutes: e.target.value })}
+                  className="border border-slate-300 p-3 rounded-lg"
+                />
+
+                <input
+                  type="number"
+                  placeholder="Token Wei Rate"
+                  value={formData.tokenWeiRate}
+                  onChange={(e) => setFormData({ ...formData, tokenWeiRate: e.target.value })}
+                  className="border border-slate-300 p-3 rounded-lg"
+                />
+
+                <input
+                  type="text"
+                  placeholder="Image URL"
+                  value={formData.image}
+                  onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                  className="border border-slate-300 p-3 rounded-lg"
+                />
+
+                <textarea
+                  placeholder="Description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="border border-slate-300 p-3 rounded-lg"
+                  rows="3"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setShowForm(false)}
+                  className="px-5 py-2 bg-gray-300 rounded-lg hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowForm(false);
+                    handleCreateDemoProperty(formData);
+                  }}
+                  className="px-5 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                >
+                  ✅ Submit Property
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* User Stats */}
+        <div className="grid md:grid-cols-3 gap-6 mb-8">
+          {/* My Investments */}
+          <Card className="shadow-lg border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <DollarSign className="w-6 h-6 text-white" />
+                </div>
+              </div>
+              <p className="text-sm text-blue-700 mb-1">My Investments</p>
+              <p className="text-3xl font-bold text-blue-900">${totalInvested.toFixed(2)}</p>
+            </CardContent>
+          </Card>
+
+          {/* My Earnings */}
+          <Card className="shadow-lg border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <TrendingUp className="w-6 h-6 text-white" />
+                </div>
+              </div>
+              <p className="text-sm text-emerald-700 mb-1">My Earnings</p>
+              <p className="text-3xl font-bold text-emerald-900">${totalEarnings.toFixed(2)}</p>
+            </CardContent>
+          </Card>
+
+          {/* Tokens Owned */}
+          <Card className="shadow-lg border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <Coins className="w-6 h-6 text-white" />
+                </div>
+              </div>
+              <p className="text-sm text-purple-700 mb-1">Tokens Owned</p>
+              <p className="text-3xl font-bold text-purple-900">{AlgAsxokenBalance}</p>
+            </CardContent>
+          </Card>
         </div>
-      </div>
-      <p className="text-sm text-emerald-700 mb-1">My Earnings</p>
-      <p className="text-3xl font-bold text-emerald-900">${totalEarnings.toFixed(2)}</p>
-    </CardContent>
-  </Card>
 
-  {/* Tokens Owned */}
-  <Card className="shadow-lg border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100">
-    <CardContent className="p-6">
-      <div className="flex items-center justify-between mb-3">
-        <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-          <Coins className="w-6 h-6 text-white" />
-        </div>
-      </div>
-      <p className="text-sm text-purple-700 mb-1">Tokens Owned</p>
-      <p className="text-3xl font-bold text-purple-900">{AlgAsxokenBalance}</p>
-    </CardContent>
-  </Card>
-</div>
+        {/* Performance Chart */}
+        <PerformanceChart investments={investments} properties={properties} />
 
-
-
-
-
-
-
-
-
-{/* Performance Chart */}
-<PerformanceChart investments={investments} properties={properties} />
-
-{/* Platform Stats */}
-
+        {/* Platform Stats */}
         <Card className="shadow-lg border-slate-100 mb-8 mt-8">
           <CardHeader>
             <CardTitle className="text-2xl font-bold">Platform Statistics</CardTitle>
@@ -571,4 +435,3 @@ const handleFetchAllCampaigns = async () => {
     </div>
   );
 }
-
