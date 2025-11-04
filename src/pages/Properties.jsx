@@ -28,14 +28,13 @@ export default function PropertiesPage() {
     const fetchCampaigns = async () => {
       try {
         setIsLoading(true);
-        console.log("⏳ Fetching campaigns from blockchain...");
-        
+
         const { signer } = await getProviderAndSigner();
         const factory = getFactoryContract(signer);
-        
+
         // ✅ استدعاء الدالة الصحيحة التي تُرجع Structs لكل حملة
         const campaignsData = await factory.getAllCampaigns();
-        
+
         // 🔍 تعديل البيانات وفلترة الحملات غير الصالحة
         const campaigns = campaignsData
           .map((c, i) => ({
@@ -61,8 +60,7 @@ export default function PropertiesPage() {
                                    campaign.contract !== "0x0000000000000000000000000000000000000000";
             return hasValidContract;
           });
-        
-        console.log(`✅ Loaded ${campaigns.length} valid campaigns from blockchain`);
+
         setProperties(campaigns);
       } catch (error) {
         console.error("❌ Error fetching campaigns:", error);
@@ -71,7 +69,6 @@ export default function PropertiesPage() {
         setIsLoading(false);
       }
     };
-
     fetchCampaigns();
   }, []);
 
@@ -146,7 +143,7 @@ export default function PropertiesPage() {
           {isLoading ? (
             <>
               {[1, 2, 3, 4, 5, 6].map((i) => (
-                <Skeleton key={i} className="h-80 rounded-lg" />
+                <Skeleton className="h-80 rounded-lg" key={i} />
               ))}
             </>
           ) : sorted.length > 0 ? (
