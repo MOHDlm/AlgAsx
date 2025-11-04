@@ -1,14 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
-import { CAMPAIGN_CONTRACT_ABI } from "../constants.js";
+import { CAMPAIGN_CONTRACT_ABI } from "@/constants";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, MapPin } from "lucide-react";
+
+
 
 const CampaignDetails = () => {
   const { address } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  
+
+  //console.log("🔍 DEBUG - address from useParams:", address);
+  //console.log("🔍 DEBUG - location.pathname:", location.pathname);
   
   // 🔹 محاولة الحصول على بيانات العقار من state أولاً
   const propertyFromState = location.state?.property;
@@ -19,17 +25,20 @@ const CampaignDetails = () => {
   const [investAmount, setInvestAmount] = useState("");
   const [txMessage, setTxMessage] = useState("");
 
-  useEffect(() => {
-    const loadCampaign = async () => {
-      try {
-        if (!window.ethereum) throw new Error("🦊 Please install MetaMask");
-          
-          if (!address || address === "undefined") {
-            console.warn("⚠️ No valid address, skipping load");
-            setLoading(false);
-            return;
-          }
-        
+ useEffect(() => {
+  // ✅ Guard
+  if (!address || address === "undefined") {
+    console.warn("⚠️ No valid address, redirecting to properties");
+    setLoading(false);
+  navigate("/properties"); // ✅ هذا السطر
+    return;
+  }
+  
+  const loadCampaign = async () => {
+    try {
+      if (!window.ethereum) throw new Error("🦊 Please install MetaMask");
+      // ...
+
         const provider = new ethers.BrowserProvider(window.ethereum);
         const contract = new ethers.Contract(address, CAMPAIGN_CONTRACT_ABI, provider);
 
@@ -86,8 +95,7 @@ const CampaignDetails = () => {
     };
 
     loadCampaign();
-  }, [address, propertyFromState]);
-
+    }, [address]);  // احذف propertyFromState
   // 💸 زر الاستثمار (contribute)
   const handleInvest = async () => {
     try {
