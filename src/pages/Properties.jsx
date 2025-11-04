@@ -24,49 +24,39 @@ export default function PropertiesPage() {
   const navigate = useNavigate();
 
   // 🛰️ جلب الحملات من البلوكشين فقط
+
+
+  
   useEffect(() => {
     const fetchCampaigns = async () => {
+      if (isRequestingAccounts) return; // لا تسمح بالتكرار
+
       try {
+        setIsRequestingAccounts(true); // بداية الطلب
         setIsLoading(true);
-        const { signer } = await getProviderAndSigner();
+
+        const { signer } = await getProviderAndSigner(); // هنا قد يحصل الخطأ عند التكرار
         const factory = getFactoryContract(signer);
-        // ✅ استدعاء الدالة الصحيحة التي تُرجع Structs لكل حملة
+
         const campaignsData = await factory.getAllCampaigns();
-        // 🔍 تعديل البيانات وفلترة الحملات غير الصالحة
-        const campaigns = campaignsData
-          .map((c, i) => ({
-            id: i + 1,
-            name_en: c.title || `Campaign #${i + 1}`,
-            goal: ethers.formatEther(c.goal || 0),
-            image: c.image || "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
-            token_price: Number(c.tokenWeiRate || 0),
-            owner: c.owner,
-            contract: c.campaignAddress || c[0],
-            created_date: new Date(Number(c.startAt) * 1000)
-              .toISOString()
-              .slice(0, 10),
-            property_type: "crowdfunding",
-            annual_return: Math.round(Math.random() * 5 + 5),
-          }))
-          // ✅ فلترة الحملات - حذف أي عنصر بدون عنوان عقد صالح
-          .filter((campaign) => {
-            // التحقق من وجود عنوان عقد صالح (contract أو campaignAddress)
-            const hasValidContract = campaign.contract && 
-                                   campaign.contract.trim() !== "" && 
-                                   campaign.contract !== "0x" &&
-                                   campaign.contract !== "0x0000000000000000000000000000000000000000";
-            return hasValidContract;
-          });
-        setProperties(campaigns);
+        // معالجة الحملات...
+
+        setProperties(campaignsData);
       } catch (error) {
-        console.error("❌ Error fetching campaigns:", error);
-        setProperties([]);
+        console.error("Error fetching campaigns:", error);
       } finally {
+        setIsRequestingAccounts(false); // نهاية الطلب
         setIsLoading(false);
       }
     };
+
     fetchCampaigns();
-  }, []);
+  }, [isRequestingAccounts]);
+
+
+
+
+  
 
   // البحث والفلترة
   const filtered = properties.filter((p) => {
