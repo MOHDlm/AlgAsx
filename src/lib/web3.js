@@ -17,7 +17,6 @@ export async function getProviderAndSigner() {
   if (isConnecting) {
     throw new Error("⏳ الاتصال قيد التنفيذ، يرجى الانتظار أو إغلاق نافذة MetaMask المفتوحة");
   }
-
   if (!window.ethereum) {
     throw new Error("❌ الرجاء تثبيت MetaMask أولاً.");
   }
@@ -25,9 +24,8 @@ export async function getProviderAndSigner() {
   try {
     // ✅ ضع علامة البدء
     isConnecting = true;
-
     const provider = new ethers.BrowserProvider(window.ethereum);
-    
+
     // ✅ تحقق أولاً إذا كان متصل بالفعل
     let accounts = [];
     try {
@@ -43,24 +41,22 @@ export async function getProviderAndSigner() {
         isConnecting = false;
         console.log("⏱️ انتهت مهلة الاتصال");
       }, 30000); // 30 ثانية
-
       accounts = await provider.send("eth_requestAccounts", []);
       clearTimeout(connectionTimeout);
     }
 
     const signer = await provider.getSigner();
     return { provider, signer };
-
   } catch (error) {
     console.error("❌ خطأ في الاتصال بـ MetaMask:", error);
-    
+
     // رسائل خطأ واضحة
     if (error.code === -32002) {
       throw new Error("⏳ يوجد طلب اتصال قيد التنفيذ. يرجى فتح MetaMask والموافقة على الطلب أو إغلاق النافذة المفتوحة");
     } else if (error.code === 4001) {
       throw new Error("❌ تم رفض الاتصال من قبل المستخدم");
     }
-    
+
     throw error;
   } finally {
     // ✅ أزل العلامة بعد 2 ثانية لضمان عدم التعليق الدائم
@@ -91,8 +87,42 @@ export function getFactoryContract(signerOrProvider) {
   );
 }
 
-/* 
+/*
   🌉 عملية الاستثمار أو التفاعل مع المصنع
   (دمج بين التوكن والمصنع)
 */
-export async function investInCampaign(am
+export async function investInCampaign(amountETH) {
+  const { signer } = await getProviderAndSigner();
+  const token = getTokenContract(signer);
+  const factory = getFactoryContract(signer);
+
+  // حول الـ ETH إلى Wei
+  const amount = ethers.parseEther(amountETH.toString());
+
+  // Approve التوكن
+  const approveTx = await token.approve(FACTORY_CONTRACT_ADDRESS, amount);
+  await approveTx.wait();
+
+  // استثمر في الحملة
+  const investTx = await factory.investInCampaign(amount);
+  return investTx.wait();
+}
+
+export async function createNewCampaign(goal, duration, title, description, imageUrl) {
+  const { signer } = await getProviderAndSigner();
+  const factory = getFactoryContract(signer);
+
+  // حول الـ goal إلى Wei
+  const goalInWei = ethers.parseEther(goal.toString());
+
+  // قم بإنشاء حملة جديدة
+  const tx = await factory.createCampaign(
+    goalInWei,
+    duration,
+    title,
+    description,
+    imageUrl
+  );
+
+  return tx.wait();
+}
