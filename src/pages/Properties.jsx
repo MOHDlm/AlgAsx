@@ -21,31 +21,20 @@ export default function PropertiesPage() {
   const [sortBy, setSortBy] = useState("newest");
   const [properties, setProperties] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRequestingAccounts, setIsRequestingAccounts] = useState(false);
   const navigate = useNavigate();
 
   // 🛰️ جلب الحملات من البلوكشين فقط
-
-
-  
   useEffect(() => {
     const fetchCampaigns = async () => {
       if (isRequestingAccounts) return; // لا تسمح بالتكرار
-setIsRequestingAccounts(true);
-
+      setIsRequestingAccounts(true);
       try {
-        setIsRequestingAccounts(true); // بداية الطلب
         setIsLoading(true);
-
         const { signer } = await getProviderAndSigner(); // هنا قد يحصل الخطأ عند التكرار
-       
-        
         const factory = getFactoryContract(signer);
-        
-        const [isRequestingAccounts, setIsRequestingAccounts] = useState(false);
-
         const campaignsData = await factory.getAllCampaigns();
         // معالجة الحملات...
-
         setProperties(campaignsData);
       } catch (error) {
         console.error("Error fetching campaigns:", error);
@@ -54,14 +43,8 @@ setIsRequestingAccounts(true);
         setIsLoading(false);
       }
     };
-
     fetchCampaigns();
   }, [isRequestingAccounts]);
-
-
-
-
-  
 
   // البحث والفلترة
   const filtered = properties.filter((p) => {
@@ -80,19 +63,19 @@ setIsRequestingAccounts(true);
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 py-8 px-4" >
-      <div className="max-w-7xl mx-auto" >
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 py-8 px-4">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8" >
-          <h1 className="text-4xl font-bold text-white mb-2" >📊 الحملات المتاحة</h1>
-          <p className="text-slate-400" >استكشف أفضل فرص الاستثمار الموثوقة</p>
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-white mb-2">📊 الحملات المتاحة</h1>
+          <p className="text-slate-400">استكشف أفضل فرص الاستثمار الموثوقة</p>
         </div>
 
         {/* Filters */}
-        <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-lg p-6 mb-8" >
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4" >
+        <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-lg p-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Search */}
-            <div className="relative" >
+            <div className="relative">
               <Search className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
               <Input
                 placeholder="ابحث عن حملة..."
@@ -130,7 +113,7 @@ setIsRequestingAccounts(true);
         </div>
 
         {/* Properties Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" >
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {isLoading ? (
             <>
               {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -146,10 +129,10 @@ setIsRequestingAccounts(true);
               />
             ))
           ) : (
-            <div className="col-span-full text-center py-12" >
+            <div className="col-span-full text-center py-12">
               <MapPin className="w-16 h-16 text-slate-500 mx-auto mb-4 opacity-50" />
-              <h3 className="text-xl font-semibold text-slate-300 mb-2" >لا توجد حملات</h3>
-              <p className="text-slate-400" >جاري البحث عن حملات جديدة...</p>
+              <h3 className="text-xl font-semibold text-slate-300 mb-2">لا توجد حملات</h3>
+              <p className="text-slate-400">جاري البحث عن حملات جديدة...</p>
             </div>
           )}
         </div>
