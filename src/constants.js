@@ -1,8 +1,7 @@
 // 🪙 عقد التوكن (TokenERC20)
 export const TOKEN_CONTRACT_ADDRESS = import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS || "0x9e324C0b2553822a85c38504858263Cba9f3d32A";
+
 export const TOKEN_CONTRACT_ABI = [
-  /* ABI الخاص بـ TokenERC20 */
-  // مثال ABI مختصر:
   {
     "inputs": [
       {"internalType": "string", "name": "name", "type": "string"},
@@ -16,6 +15,16 @@ export const TOKEN_CONTRACT_ABI = [
   {
     "inputs": [
       {"internalType": "address", "name": "spender", "type": "address"},
+      {"internalType": "uint256", "name": "amount", "type": "uint256"}
+    ],
+    "name": "approve",
+    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "spender", "type": "address"},
       {"internalType": "uint256", "name": "allowance", "type": "uint256"},
       {"internalType": "uint256", "name": "needed", "type": "uint256"}
     ],
@@ -23,10 +32,11 @@ export const TOKEN_CONTRACT_ABI = [
     "type": "error"
   }
 ];
-// عقد المصنع (CampaignFactory)
+
+// 🏭 عقد المصنع (CampaignFactory)
 export const FACTORY_CONTRACT_ADDRESS = import.meta.env.VITE_FACTORY_CONTRACT_ADDRESS || "0x103e5A0Bb788eB5A9E1d304681c3c1c216D1278A";
+
 export const FACTORY_CONTRACT_ABI = [
-  // مثال ABI مختصر
   {
     "inputs": [
       {"internalType": "uint256", "name": "goal", "type": "uint256"},
@@ -43,16 +53,21 @@ export const FACTORY_CONTRACT_ABI = [
   {
     "inputs": [],
     "name": "getCampaigns",
-    "outputs": [
-      {"internalType": "address[]", "name": "", "type": "address[]"}
-    ],
+    "outputs": [{"internalType": "address[]", "name": "", "type": "address[]"}],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256", "name": "amount", "type": "uint256"}],
+    "name": "investInCampaign",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   }
 ];
-// عقد الحملة (Campaign)
+
+// 🎯 عقد الحملة (Campaign)
 export const CAMPAIGN_CONTRACT_ABI = [
-  // مثال ABI مختصر للعقد المفرد
   {
     "inputs": [
       {"internalType": "uint256", "name": "amount", "type": "uint256"}
