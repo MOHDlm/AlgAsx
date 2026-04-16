@@ -1,94 +1,42 @@
 import { ethers } from "ethers";
 import {
-  TOKEN_CONTRACT_ADDRESS,
-  TOKEN_CONTRACT_ABI,
   FACTORY_CONTRACT_ADDRESS,
   FACTORY_CONTRACT_ABI,
-} from "../constants";
+  CAMPAIGN_CONTRACT_ABI,
+} from "../constants.js";
 
-// جلب رابط RPC من ملف البيئة
-const RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL;
+// ✅ Provider للقراءة فقط
+export const getReadOnlyProvider = () => {
+  const rpcUrl = import.meta.env.VITE_LOCAL_RPC_URL;
+  if (!rpcUrl) throw new Error("VITE_LOCAL_RPC_URL missing in .env");
+  return new ethers.JsonRpcProvider(rpcUrl);
+};
 
-// 1️⃣ دالة للحصول على مزود "للقراءة فقط" (لا تحتاج ميتاماسك)
-export function getReadOnlyProvider() {
-  if (!RPC_URL) {
-    throw new Error("VITE_SEPOLIA_RPC_URL missing in .env");
-  }
-  return new ethers.JsonRpcProvider(RPC_URL);
-}
-
-// 2️⃣ دالة الاتصال بالمحفظة (للمعاملات فقط - بيع/شراء)
-export async function getProviderAndSigner() {
-  if (!window.ethereum) {
-    throw new Error("❌ الرجاء تثبيت MetaMask أولاً.");
-  }
-  const provider = new ethers.BrowserProvider(window.ethereum);
-  const signer = await provider.getSigner();
-  return { provider, signer };
-}
-
-// 🏭 عقد المصنع (معدلة لتعمل مع القراءة أو الكتابة)
-export function getFactoryContract(signerOrProvider = null) {
-  // إذا لم يتم تمرير مزود، نستخدم المزود الافتراضي للقراءة فقط
-  const provider = signerOrProvider || getReadOnlyProvider();
-
+// ✅ Factory Contract للقراءة فقط
+export const getFactoryContract = () => {
+  const provider = getReadOnlyProvider();
   return new ethers.Contract(
     FACTORY_CONTRACT_ADDRESS,
     FACTORY_CONTRACT_ABI,
-    provider
+    provider,
   );
-}
+};
 
-// 🪙 عقد التوكن
-export function getTokenContract(signerOrProvider = null) {
-  const provider = signerOrProvider || getReadOnlyProvider();
+// ✅ Campaign Contract للقراءة فقط
+export const getCampaignContract = (campaignAddress) => {
+  const provider = getReadOnlyProvider();
+  return new ethers.Contract(campaignAddress, CAMPAIGN_CONTRACT_ABI, provider);
+};
 
-  return new ethers.Contract(
-    TOKEN_CONTRACT_ADDRESS,
-    TOKEN_CONTRACT_ABI,
-    provider
-  );
-}
-
-// 💰 الاستثمار في حملة (يحتاج MetaMask)
-export async function investInCampaign(amountETH) {
-  const { signer } = await getProviderAndSigner();
-  const factory = getFactoryContract(signer);
-
-  const activeCampaign = await factory.getActiveCampaign();
-  if (!activeCampaign || activeCampaign === ethers.ZeroAddress) {
-    throw new Error("🚫 لا توجد حملة نشطة حالياً.");
+// ✅ Factory Contract للكتابة (MetaMask)
+export const getFactoryContractWithSigner = async () => {
+  if (window.ethereum) {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    return new ethers.Contract(
+      FACTORY_CONTRACT_ADDRESS,
+      FACTORY_CONTRACT_ABI,
+      signer,
+    );
   }
-
-  const tx = await factory.investInActiveCampaign({
-    value: ethers.parseEther(amountETH.toString()),
-  });
-
-  await tx.wait();
-  console.log("✅ تم الاستثمار بنجاح:", tx.hash);
-  return tx;
-}
-
-// 🎯 إنشاء حملة جديدة (يحتاج MetaMask)
-export async function createNewCampaign(
-  goal,
-  duration,
-  title,
-  description,
-  imageUrl
-) {
-  const { signer } = await getProviderAndSigner();
-  const factory = getFactoryContract(signer);
-
-  const tx = await factory.createCampaign(
-    ethers.parseEther(goal.toString()),
-    duration,
-    title,
-    description,
-    imageUrl
-  );
-
-  await tx.wait();
-  console.log("🎯 تم إنشاء حملة جديدة:", tx.hash);
-  return tx;
-}
+};

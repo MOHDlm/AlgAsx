@@ -1,6 +1,16 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, Building2, Coins, DollarSign, Users } from "lucide-react";
+import {
+  TrendingUp,
+  Building2,
+  Coins,
+  DollarSign,
+  Users,
+  ShieldCheck,
+  Wallet,
+  Copy,
+  CheckCircle,
+} from "lucide-react";
 import PerformanceChart from "../components/dashboard/PerformanceChart";
 import RecentActivity from "../components/dashboard/RecentActivity";
 import {
@@ -8,139 +18,227 @@ import {
   TOKEN_CONTRACT_ABI,
   FACTORY_CONTRACT_ADDRESS,
   FACTORY_CONTRACT_ABI,
+  IDENTITY_CONTRACT_ADDRESS,
+  IDENTITY_CONTRACT_ABI,
 } from "@/constants";
 import { ethers } from "ethers";
+import {
+  createWallet,
+  saveWallet,
+  loadWallet,
+  hasWallet,
+  getOrCreateSessionPassword,
+} from "../lib/walletManager";
 
 export default function DashboardPage() {
   const [tokenBalance, setTokenBalance] = useState("...");
   const [user, setUser] = useState(null);
-  const [investments, setInvestments] = useState([]);
+  const [investments] = useState([]);
   const [properties, setProperties] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [walletAddress, setWalletAddress] = useState("");
+  const [walletReady, setWalletReady] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL;
-  const PRIVATE_KEY = import.meta.env.VITE_PRIVATE_KEY;
+  // KYC State
+  const [kycAddress, setKycAddress] = useState("");
+  const [kycCountry, setKycCountry] = useState("DZ");
+  const [kycLoading, setKycLoading] = useState(false);
+  const [kycMessage, setKycMessage] = useState("");
+  const [kycStatus, setKycStatus] = useState(null);
+  const [checkAddress, setCheckAddress] = useState("");
+
+  const RPC_URL = import.meta.env.VITE_LOCAL_RPC_URL;
 
   useEffect(() => {
     setUser({ full_name: "Local Investor", email: "user@localhost" });
-    fetchBlockchainData();
-  }, []);
+    initWalletAndFetch();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fetchBlockchainData = async () => {
-    console.log("🔍 Starting to fetch blockchain data...");
-
+  // ─── تهيئة المحفظة ثم جلب البيانات ──────────────────────────────
+  const initWalletAndFetch = async () => {
     try {
-      // إنشاء provider باستخدام RPC مباشرة (بدون MetaMask)
+      let wallet;
+      const password = getOrCreateSessionPassword();
+
+      if (hasWallet()) {
+        // مستخدم موجود — حمّل محفظته
+        wallet = await loadWallet(password);
+        if (!wallet) {
+          // كلمة المرور تغيّرت أو تلفت البيانات — أنشئ محفظة جديدة
+          wallet = await createAndSaveNewWallet(password);
+        }
+      } else {
+        // مستخدم جديد — أنشئ محفظة تلقائياً
+        wallet = await createAndSaveNewWallet(password);
+      }
+
+      const address = wallet.address;
+      setWalletAddress(address);
+      setWalletReady(true);
+
+      await fetchBlockchainData(wallet);
+    } catch (error) {
+      console.error("❌ خطأ في تهيئة المحفظة:", error);
+      setLoading(false);
+    }
+  };
+
+  const createAndSaveNewWallet = async (password) => {
+    const newWallet = createWallet();
+    await saveWallet(newWallet, password);
+    return new ethers.Wallet(newWallet.privateKey);
+  };
+
+  // ─── جلب بيانات البلوكشين بمحفظة المستخدم ───────────────────────
+  const fetchBlockchainData = async (userWallet) => {
+    try {
       const provider = new ethers.JsonRpcProvider(RPC_URL);
-      const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+      const connectedWallet = userWallet.connect(provider);
 
-      console.log("💼 Platform Wallet:", wallet.address);
-
-      // 1️⃣ جلب رصيد التوكنات
+      // رصيد التوكن لمحفظة المستخدم
       const tokenContract = new ethers.Contract(
         TOKEN_CONTRACT_ADDRESS,
         TOKEN_CONTRACT_ABI,
-        provider
+        provider,
       );
+      const balance = await tokenContract.balanceOf(connectedWallet.address);
+      setTokenBalance(parseFloat(ethers.formatUnits(balance, 18)).toFixed(1));
 
-      const balance = await tokenContract.balanceOf(wallet.address);
-      const formattedBalance = ethers.formatUnits(balance, 18);
-      console.log("💰 Token Balance:", formattedBalance);
-      setTokenBalance(parseFloat(formattedBalance).toFixed(1));
-
-      // 2️⃣ جلب جميع الحملات من Factory
+      // جلب الحملات
       const factoryContract = new ethers.Contract(
         FACTORY_CONTRACT_ADDRESS,
         FACTORY_CONTRACT_ABI,
-        provider
+        provider,
       );
-
       const allCampaigns = await factoryContract.getAllCampaigns();
-      console.log("📋 Total Campaigns:", allCampaigns.length);
-      console.log("📦 Campaign Addresses:", allCampaigns);
 
-      // 3️⃣ جلب تفاصيل كل حملة
       const campaignDetails = [];
       for (let i = 0; i < allCampaigns.length; i++) {
         try {
-          const campaignAddress = allCampaigns[i];
-
-          // استخدام ABI مبسط لقراءة البيانات الأساسية
+          const campaignAddress = allCampaigns[i].campaignAddress;
           const CAMPAIGN_ABI = [
-            "function title() view returns (string)",
-            "function description() view returns (string)",
             "function goal() view returns (uint256)",
             "function totalRaised() view returns (uint256)",
             "function deadline() view returns (uint256)",
             "function finalized() view returns (bool)",
-            "function image() view returns (string)",
           ];
-
           const campaignContract = new ethers.Contract(
             campaignAddress,
             CAMPAIGN_ABI,
-            provider
+            provider,
           );
-
-          const [title, description, goal, raised, deadline, finalized, image] =
-            await Promise.all([
-              campaignContract.title(),
-              campaignContract.description(),
-              campaignContract.goal(),
-              campaignContract.totalRaised(),
-              campaignContract.deadline(),
-              campaignContract.finalized(),
-              campaignContract
-                .image()
-                .catch(() => "https://via.placeholder.com/400"),
-            ]);
-
-          const campaignData = {
+          const [goal, raised, deadline, finalized] = await Promise.all([
+            campaignContract.goal(),
+            campaignContract.totalRaised(),
+            campaignContract.deadline(),
+            campaignContract.finalized(),
+          ]);
+          campaignDetails.push({
             id: i + 1,
             address: campaignAddress,
-            name_en: title,
-            description: description,
-            total_value: parseFloat(ethers.formatEther(goal)) * 3000, // تقدير القيمة
+            total_value: parseFloat(ethers.formatEther(goal)) * 3000,
             goal: ethers.formatEther(goal),
             raised: ethers.formatEther(raised),
             deadline: new Date(Number(deadline) * 1000).toLocaleDateString(),
-            finalized: finalized,
+            finalized,
             annual_return: 7.5,
-            image: image || "https://via.placeholder.com/400",
-          };
-
-          campaignDetails.push(campaignData);
-          console.log(`✅ Campaign ${i + 1}:`, campaignData);
-        } catch (err) {
-          console.error(`❌ Error fetching campaign ${i + 1}:`, err);
+          });
+        } catch (_err) {
+          // campaign fetch failed, skip
         }
       }
 
       setCampaigns(campaignDetails);
       setProperties(campaignDetails);
-
       setLoading(false);
     } catch (error) {
-      console.error("❌ Error fetching blockchain data:", error);
-      setTokenBalance("Error");
+      console.error("❌ Error:", error);
       setLoading(false);
+    }
+  };
+
+  // ─── نسخ العنوان ─────────────────────────────────────────────────
+  const copyAddress = () => {
+    navigator.clipboard.writeText(walletAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // ─── KYC: توثيق مستثمر ───────────────────────────────────────────
+  const handleVerifyKYC = async () => {
+    if (!kycAddress || !ethers.isAddress(kycAddress)) {
+      setKycMessage("❌ عنوان المحفظة غير صحيح");
+      return;
+    }
+    if (!walletReady) {
+      setKycMessage("❌ المحفظة لم تتهيأ بعد");
+      return;
+    }
+    try {
+      setKycLoading(true);
+      setKycMessage("");
+      const provider = new ethers.JsonRpcProvider(RPC_URL);
+      const password = getOrCreateSessionPassword();
+      const userWallet = await loadWallet(password);
+      const connectedWallet = userWallet.connect(provider);
+
+      const identity = new ethers.Contract(
+        IDENTITY_CONTRACT_ADDRESS,
+        IDENTITY_CONTRACT_ABI,
+        connectedWallet,
+      );
+      const tx = await identity.verifyIdentity(kycAddress, kycCountry, {
+        gasLimit: 200000,
+      });
+      setKycMessage("⏳ جاري التوثيق...");
+      await tx.wait();
+      setKycMessage(`✅ تم توثيق ${kycAddress.slice(0, 10)}... بنجاح!`);
+      setKycAddress("");
+    } catch (e) {
+      setKycMessage(`❌ ${e.reason || e.message}`);
+    } finally {
+      setKycLoading(false);
+    }
+  };
+
+  // ─── KYC: التحقق من حالة مستثمر ─────────────────────────────────
+  const handleCheckKYC = async () => {
+    if (!checkAddress || !ethers.isAddress(checkAddress)) {
+      setKycStatus({ error: "عنوان غير صحيح" });
+      return;
+    }
+    try {
+      const provider = new ethers.JsonRpcProvider(RPC_URL);
+      const identity = new ethers.Contract(
+        IDENTITY_CONTRACT_ADDRESS,
+        IDENTITY_CONTRACT_ABI,
+        provider,
+      );
+      const result = await identity.getIdentity(checkAddress);
+      setKycStatus({
+        isVerified: result.isVerifiedStatus || result[0],
+        country: result.countryCode || result[2],
+        verifiedBy: result.verifiedBy || result[3],
+      });
+    } catch (e) {
+      setKycStatus({ error: e.message });
     }
   };
 
   const totalInvested = investments.reduce(
     (sum, inv) => sum + (inv.purchase_price || 0),
-    0
+    0,
   );
   const totalEarnings = investments.reduce(
     (sum, inv) => sum + (inv.total_earnings || 0),
-    0
+    0,
   );
-
   const platformStats = {
     totalProperties: campaigns.length,
     totalValue: campaigns.reduce((sum, p) => sum + (p.total_value || 0), 0),
-    totalInvestors: 0, // يمكن حسابه من events في المستقبل
+    totalInvestors: 0,
     avgReturn:
       campaigns.length > 0
         ? (
@@ -150,22 +248,7 @@ export default function DashboardPage() {
         : 0,
   };
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 md:p-8 flex items-center justify-center">
-        <Card className="max-w-md text-center shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-2xl">Please Sign In</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-slate-600">
-              Please sign in to view your dashboard
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 md:p-8">
@@ -173,38 +256,63 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl md:text-5xl font-bold text-slate-900 mb-2">
-            IT IS WORKING NOW
+            Dashboard
           </h1>
           <p className="text-slate-600 text-lg">
-            Welcome back, {user.full_name || "Investor"}
+            Welcome back, {user.full_name}
           </p>
+
+          {/* ─── بطاقة المحفظة الشخصية ─── */}
+          {walletReady && (
+            <div className="mt-4 inline-flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                <Wallet className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium">
+                  محفظتك الشخصية
+                </p>
+                <p className="text-sm font-mono text-slate-800 font-semibold">
+                  {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                </p>
+              </div>
+              <button
+                onClick={copyAddress}
+                className="ml-2 p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                title="نسخ العنوان الكامل"
+              >
+                {copied ? (
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                ) : (
+                  <Copy className="w-4 h-4 text-slate-400" />
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}
         <div className="flex justify-end gap-4 mb-8">
           <button
             onClick={() => (window.location.href = "/create-campaign")}
-            className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition-all flex items-center gap-2"
+            className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition-all"
           >
-            🏠 Create Your Property
+            🏠 Create Property
           </button>
           <button
             onClick={() => (window.location.href = "/properties")}
-            className="bg-blue-500 hover:bg-blue-600 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition-all flex items-center gap-2"
+            className="bg-blue-500 hover:bg-blue-600 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition-all"
           >
-            📋 View All Campaigns
+            📋 View Campaigns
           </button>
         </div>
 
         {/* User Stats */}
         <div className="grid md:grid-cols-3 gap-6 mb-8">
-          {/* My Investments */}
           <Card className="shadow-lg border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <DollarSign className="w-6 h-6 text-white" />
-                </div>
+              <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg mb-3">
+                <DollarSign className="w-6 h-6 text-white" />
               </div>
               <p className="text-sm text-blue-700 mb-1">My Investments</p>
               <p className="text-3xl font-bold text-blue-900">
@@ -212,14 +320,10 @@ export default function DashboardPage() {
               </p>
             </CardContent>
           </Card>
-
-          {/* My Earnings */}
           <Card className="shadow-lg border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <TrendingUp className="w-6 h-6 text-white" />
-                </div>
+              <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg mb-3">
+                <TrendingUp className="w-6 h-6 text-white" />
               </div>
               <p className="text-sm text-emerald-700 mb-1">My Earnings</p>
               <p className="text-3xl font-bold text-emerald-900">
@@ -227,14 +331,10 @@ export default function DashboardPage() {
               </p>
             </CardContent>
           </Card>
-
-          {/* Tokens Owned */}
           <Card className="shadow-lg border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <Coins className="w-6 h-6 text-white" />
-                </div>
+              <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center shadow-lg mb-3">
+                <Coins className="w-6 h-6 text-white" />
               </div>
               <p className="text-sm text-purple-700 mb-1">Tokens Owned</p>
               <p className="text-3xl font-bold text-purple-900">
@@ -244,7 +344,145 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Performance Chart */}
+        {/* ─── KYC Management ─── */}
+        <Card className="shadow-lg border-green-200 mb-8">
+          <CardHeader className="bg-gradient-to-r from-green-600 to-green-700 rounded-t-xl">
+            <CardTitle className="text-white flex items-center gap-2 text-xl">
+              <ShieldCheck className="w-6 h-6" />
+              KYC Management — توثيق المستثمرين
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6">
+            <div className="grid md:grid-cols-2 gap-8">
+              {/* توثيق مستثمر جديد */}
+              <div>
+                <h3 className="font-bold text-slate-800 mb-4 text-lg">
+                  ✅ توثيق مستثمر جديد
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 mb-1 block">
+                      عنوان المحفظة
+                    </label>
+                    <input
+                      type="text"
+                      value={kycAddress}
+                      onChange={(e) => setKycAddress(e.target.value)}
+                      placeholder="0x..."
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 font-mono text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 mb-1 block">
+                      رمز الدولة
+                    </label>
+                    <select
+                      value={kycCountry}
+                      onChange={(e) => setKycCountry(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+                    >
+                      <option value="DZ">🇩🇿 Algeria (DZ)</option>
+                      <option value="SA">🇸🇦 Saudi Arabia (SA)</option>
+                      <option value="AE">🇦🇪 UAE (AE)</option>
+                      <option value="US">🇺🇸 USA (US)</option>
+                      <option value="GB">🇬🇧 UK (GB)</option>
+                      <option value="FR">🇫🇷 France (FR)</option>
+                      <option value="MA">🇲🇦 Morocco (MA)</option>
+                      <option value="TN">🇹🇳 Tunisia (TN)</option>
+                    </select>
+                  </div>
+                  <button
+                    onClick={handleVerifyKYC}
+                    disabled={kycLoading || !walletReady}
+                    className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold rounded-lg transition-all"
+                  >
+                    {kycLoading ? "⏳ جاري التوثيق..." : "🛡️ توثيق المستثمر"}
+                  </button>
+                  {kycMessage && (
+                    <div
+                      className={`p-3 rounded-lg text-sm font-medium ${
+                        kycMessage.includes("✅")
+                          ? "bg-green-50 text-green-700 border border-green-200"
+                          : kycMessage.includes("❌")
+                            ? "bg-red-50 text-red-700 border border-red-200"
+                            : "bg-blue-50 text-blue-700 border border-blue-200"
+                      }`}
+                    >
+                      {kycMessage}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* التحقق من حالة مستثمر */}
+              <div>
+                <h3 className="font-bold text-slate-800 mb-4 text-lg">
+                  🔍 التحقق من حالة مستثمر
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 mb-1 block">
+                      عنوان المحفظة
+                    </label>
+                    <input
+                      type="text"
+                      value={checkAddress}
+                      onChange={(e) => setCheckAddress(e.target.value)}
+                      placeholder="0x..."
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={handleCheckKYC}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all"
+                  >
+                    🔍 تحقق من الحالة
+                  </button>
+                  {kycStatus && (
+                    <div
+                      className={`p-4 rounded-lg border ${
+                        kycStatus.error
+                          ? "bg-red-50 border-red-200"
+                          : kycStatus.isVerified
+                            ? "bg-green-50 border-green-200"
+                            : "bg-yellow-50 border-yellow-200"
+                      }`}
+                    >
+                      {kycStatus.error ? (
+                        <p className="text-red-700 text-sm">
+                          ❌ {kycStatus.error}
+                        </p>
+                      ) : (
+                        <div className="space-y-1 text-sm">
+                          <p
+                            className={`font-bold text-lg ${kycStatus.isVerified ? "text-green-700" : "text-yellow-700"}`}
+                          >
+                            {kycStatus.isVerified ? "✅ موثق" : "⚠️ غير موثق"}
+                          </p>
+                          {kycStatus.isVerified && (
+                            <>
+                              <p className="text-slate-600">
+                                🌍 الدولة:{" "}
+                                <span className="font-medium">
+                                  {kycStatus.country}
+                                </span>
+                              </p>
+                              <p className="text-slate-600 font-mono text-xs">
+                                تم التوثيق بواسطة:{" "}
+                                {kycStatus.verifiedBy?.slice(0, 16)}...
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <PerformanceChart
           investments={investments}
           properties={properties}
@@ -295,38 +533,16 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Recent Activity */}
         <RecentActivity
           investments={investments}
           properties={properties}
         />
 
-        {/* Loading/Empty State */}
         {loading && (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
             <p className="text-slate-600">Loading blockchain data...</p>
           </div>
-        )}
-
-        {!loading && campaigns.length === 0 && (
-          <Card className="mt-8 shadow-lg">
-            <CardContent className="p-12 text-center">
-              <Building2 className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-slate-900 mb-2">
-                No Campaigns Yet
-              </h3>
-              <p className="text-slate-600 mb-6">
-                Be the first to create a property campaign!
-              </p>
-              <button
-                onClick={() => (window.location.href = "/create-campaign")}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition-all"
-              >
-                🏗️ Create First Campaign
-              </button>
-            </CardContent>
-          </Card>
         )}
       </div>
     </div>

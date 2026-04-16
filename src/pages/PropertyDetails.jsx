@@ -1,93 +1,181 @@
-import React, { useState } from "react";
-import { Investment, User } from "@/api/entities";
-import { useNavigate, useLocation } from "react-router-dom";
-import { createPageUrl } from "@/utils";
+import { useState, useEffect } from "react";
+import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { 
-  ArrowLeft, 
-  MapPin, 
-  Building2, 
-  Calendar, 
-  TrendingUp, 
-  Coins, 
-  CheckCircle2, 
-  ExternalLink 
+import {
+  ArrowLeft,
+  MapPin,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ethers } from "ethers";
+import { CAMPAIGN_CONTRACT_ABI } from "../constants.js";
 
 export default function PropertyDetailsPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { address } = useParams();
+
   const property = location.state?.property;
 
-  const [tokensToBuy, setTokensToBuy] = useState(1);
-  const [isPurchasing, setIsPurchasing] = useState(false);
-  const user = User.current;
-  const [isLoading] = useState(false);
+  const [campaignInfo, setCampaignInfo] = useState(null);
+  const [isLoadingInfo, setIsLoadingInfo] = useState(true);
+  const [investAmount, setInvestAmount] = useState("0.001");
+  const [isInvesting, setIsInvesting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  // 🔍 تسجيل البيانات للتأكد من وصول الصورة
-  console.log("📦 Property received in details:", property);
-  console.log("🖼️ Property image:", property?.image);
+  const contractAddr = address || property?.contract;
 
-  const handlePurchase = async () => {
-    if (!user) {
-      alert("You must be logged in first.");
+  // ─── جلب بيانات الحملة ───────────────────────────────────
+  useEffect(() => {
+    if (!contractAddr) {
+      setIsLoadingInfo(false);
       return;
     }
 
-    if (tokensToBuy < 1 || tokensToBuy > (property.available_tokens || 0)) {
-      alert("Invalid number of tokens.");
-      return;
-    }
+    const fetchInfo = async () => {
+      try {
+        setIsLoadingInfo(true);
+        setError("");
 
-    setIsPurchasing(true);
+        const rpcUrl = import.meta.env.VITE_LOCAL_RPC_URL;
+        if (!rpcUrl) throw new Error("VITE_LOCAL_RPC_URL missing in .env");
 
-    const investmentData = {
-      property_id: property.id,
-      tokens_owned: tokensToBuy,
-      purchase_price: tokensToBuy * property.token_price,
-      purchase_date: new Date().toISOString().split("T")[0],
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+
+        // تحقق أن العنوان عقد حقيقي
+        const code = await provider.getCode(contractAddr);
+        if (code === "0x") {
+          throw new Error(
+            `Address ${contractAddr} is not a contract. Check campaign address.`,
+          );
+        }
+
+        const contract = new ethers.Contract(
+          contractAddr,
+          CAMPAIGN_CONTRACT_ABI,
+          provider,
+        );
+
+        const info = await contract.getCampaignInfo();
+        setCampaignInfo({
+          goal: info.currentGoal,
+          raised: info.currentRaised,
+          timeRemaining: info.timeRemaining,
+          isFinalized: info.isFinalized,
+          isSuccessful: info.isSuccessful,
+          hasEnded: info.hasEnded,
+        });
+      } catch (e) {
+        console.error("Error fetching campaign info:", e);
+        setError(`Failed to load campaign data. ${e.message}`);
+      } finally {
+        setIsLoadingInfo(false);
+      }
     };
 
-    Investment.add(investmentData);
-    setIsPurchasing(false);
-    alert("Mock purchase successful! Tokens added locally.");
-    navigate(createPageUrl("Portfolio"));
+    fetchInfo();
+  }, [contractAddr]);
+
+  // ─── الاستثمار ───────────────────────────────────────────
+  const handleInvest = async () => {
+    setError("");
+    setSuccess("");
+
+    const amountFloat = parseFloat(investAmount);
+    if (isNaN(amountFloat) || amountFloat < 0.001) {
+      setError("Minimum investment is 0.001 ETH.");
+      return;
+    }
+
+    try {
+      setIsInvesting(true);
+
+      const privateKey = import.meta.env.VITE_PRIVATE_KEY;
+      const rpcUrl = import.meta.env.VITE_LOCAL_RPC_URL;
+
+      if (!privateKey) throw new Error("VITE_PRIVATE_KEY missing in .env");
+      if (!rpcUrl) throw new Error("VITE_LOCAL_RPC_URL missing in .env");
+
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const wallet = new ethers.Wallet(privateKey, provider);
+
+      const campaign = new ethers.Contract(
+        contractAddr,
+        CAMPAIGN_CONTRACT_ABI,
+        wallet,
+      );
+
+      const tx = await campaign.contribute({
+        value: ethers.parseEther(String(amountFloat)),
+        gasLimit: 300000,
+      });
+
+      setSuccess(`⏳ Transaction sent: ${tx.hash}`);
+      await tx.wait();
+      setSuccess(`✅ Investment successful! TX: ${tx.hash}`);
+
+      // تحديث البيانات بعد الاستثمار
+      const info = await campaign.getCampaignInfo();
+      setCampaignInfo({
+        goal: info.currentGoal,
+        raised: info.currentRaised,
+        timeRemaining: info.timeRemaining,
+        isFinalized: info.isFinalized,
+        isSuccessful: info.isSuccessful,
+        hasEnded: info.hasEnded,
+      });
+    } catch (e) {
+      console.error("Investment error:", e);
+      setError(e.reason || e.message || "Transaction failed.");
+    } finally {
+      setIsInvesting(false);
+    }
   };
 
-  // 🔄 حالة التحميل
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 md:p-8">
-        <div className="max-w-7xl mx-auto">
-          <Skeleton className="h-12 w-64 mb-6" />
-          <div className="grid lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2">
-              <Skeleton className="h-96 w-full rounded-2xl" />
-            </div>
-            <Skeleton className="h-96 w-full rounded-2xl" />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // ─── حسابات ──────────────────────────────────────────────
+  const goalEth = campaignInfo
+    ? parseFloat(ethers.formatEther(campaignInfo.goal))
+    : 0;
+  const raisedEth = campaignInfo
+    ? parseFloat(ethers.formatEther(campaignInfo.raised))
+    : 0;
+  const progressPct =
+    goalEth > 0 ? Math.min((raisedEth / goalEth) * 100, 100) : 0;
 
-  // ❌ لا توجد بيانات
-  if (!property) {
+  const deadline = campaignInfo
+    ? new Date(Date.now() + Number(campaignInfo.timeRemaining) * 1000)
+    : null;
+
+  const status = campaignInfo?.hasEnded
+    ? campaignInfo.isSuccessful
+      ? "Successful"
+      : "Failed"
+    : "Active";
+
+  // ─── خطأ كامل في التحميل ─────────────────────────────────
+  if (!isLoadingInfo && error && !campaignInfo) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 md:p-8 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
-            Property Not Found
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+        <div className="text-center max-w-md bg-white rounded-2xl shadow-lg p-8">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-red-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">
+            Error Loading Campaign
           </h2>
-          <p className="text-slate-600 mb-6">
-            Please go back to the main page and select a property again.
-          </p>
-          <Button onClick={() => navigate(createPageUrl("Properties"))}>
+          <p className="text-slate-500 text-sm mb-6 break-all">{error}</p>
+          <Button
+            onClick={() => navigate("/properties")}
+            className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl"
+          >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Properties
           </Button>
@@ -96,240 +184,262 @@ export default function PropertyDetailsPage() {
     );
   }
 
-  const propertyTypeLabels = {
-    residential: "Residential",
-    commercial: "Commercial",
-    mixed_use: "Mixed Use",
-    industrial: "Industrial",
-    crowdfunding: "Crowdfunding"
-  };
-
-  const totalInvestment = tokensToBuy * (property.token_price || 0);
-  const annualReturn = totalInvestment * ((property.annual_return || 0) / 100);
-  const monthlyReturn = annualReturn / 12;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 md:p-8">
       <div className="max-w-7xl mx-auto">
-        {/* 🔙 زر الرجوع */}
+        {/* زر الرجوع */}
         <Button
           variant="outline"
-          onClick={() => navigate(createPageUrl("Properties"))}
+          onClick={() => navigate("/properties")}
           className="mb-6 rounded-xl"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Properties
+          Back to Projects
         </Button>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* 📄 المحتوى الرئيسي */}
+          {/* ─── المحتوى الرئيسي ─── */}
           <div className="lg:col-span-2 space-y-6">
-            {/* 🖼️ الصورة الرئيسية */}
+            {/* الصورة */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative h-96 rounded-2xl overflow-hidden shadow-2xl"
+              className="relative h-80 rounded-2xl overflow-hidden shadow-2xl"
             >
               <img
                 src={
-                  property.image || 
+                  property?.image ||
                   "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200"
                 }
-                alt={property.name_en || "Property image"}
+                alt={property?.name_en || "Campaign"}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  console.error("❌ Failed to load image:", e.target.src);
-                  e.target.src = 
+                  e.target.src =
                     "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200";
                 }}
               />
-
-              {/* 🏷️ الشارات */}
-              <div className="absolute top-6 left-6 flex gap-3">
-                <Badge className="bg-emerald-500 text-white px-4 py-2 text-sm font-semibold shadow-lg">
-                  {property.annual_return || 0}% Annual Return
+              <div className="absolute top-4 left-4 flex gap-2">
+                <Badge className="bg-emerald-500 text-white px-3 py-1 text-sm font-semibold shadow">
+                  {property?.annual_return || 0}% Annual Return
                 </Badge>
-                {property.status === "available" && (
-                  <Badge className="bg-blue-500 text-white px-4 py-2 text-sm font-semibold shadow-lg">
-                    Available to Invest
+                {!isLoadingInfo && campaignInfo && (
+                  <Badge
+                    className={`px-3 py-1 text-white text-sm font-semibold shadow ${
+                      status === "Active"
+                        ? "bg-blue-500"
+                        : status === "Successful"
+                          ? "bg-green-600"
+                          : "bg-red-500"
+                    }`}
+                  >
+                    {status}
                   </Badge>
                 )}
               </div>
             </motion.div>
 
-            {/* 📋 معلومات العقار */}
-            <Card className="shadow-lg border-slate-100">
+            {/* معلومات الحملة */}
+            <Card className="shadow-lg">
               <CardHeader>
-                <div className="space-y-2">
-                  <CardTitle className="text-3xl font-bold text-slate-900">
-                    {property.name_en || "Property Title"}
-                  </CardTitle>
-                  {property.address && (
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <MapPin className="w-5 h-5" />
-                      <span className="text-lg">{property.address}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 text-slate-600">
-                    <span className="text-lg">
-                      {property.city || "N/A"}, {property.country || "N/A"}
-                    </span>
-                  </div>
+                <CardTitle className="text-3xl font-bold text-slate-900">
+                  {property?.name_en || "Campaign"}
+                </CardTitle>
+                <div className="flex items-center gap-2 text-slate-500 text-sm mt-1">
+                  <MapPin className="w-4 h-4" />
+                  <span>{property?.location || "Algeria"}</span>
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
-                <p className="text-slate-700 leading-relaxed text-lg">
-                  {property.description_en || 
-                   property.description_ar || 
-                   "No description available for this property."}
+                <p className="text-slate-700 leading-relaxed">
+                  {property?.description ||
+                    "No description available for this campaign."}
                 </p>
 
-                {/* 📊 الإحصائيات */}
-                <div className="grid md:grid-cols-3 gap-4">
-                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
-                    <Building2 className="w-6 h-6 text-blue-600 mb-2" />
-                    <p className="text-sm text-blue-700 mb-1">Property Type</p>
-                    <p className="font-bold text-blue-900">
-                      {propertyTypeLabels[property.property_type] || "N/A"}
-                    </p>
+                {/* إحصائيات البلوكشين */}
+                {isLoadingInfo ? (
+                  <div className="space-y-4">
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <Skeleton className="h-24 rounded-xl" />
+                      <Skeleton className="h-24 rounded-xl" />
+                    </div>
+                    <Skeleton className="h-8 rounded-xl" />
+                    <Skeleton className="h-12 rounded-xl" />
                   </div>
-                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
-                    <Calendar className="w-6 h-6 text-purple-600 mb-2" />
-                    <p className="text-sm text-purple-700 mb-1">Created</p>
-                    <p className="font-bold text-purple-900">
-                      {property.created_date || 
-                       property.year_built || 
-                       "N/A"}
-                    </p>
-                  </div>
-                  <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4 border border-emerald-200">
-                    <TrendingUp className="w-6 h-6 text-emerald-600 mb-2" />
-                    <p className="text-sm text-emerald-700 mb-1">Goal</p>
-                    <p className="font-bold text-emerald-900">
-                      {property.goal || property.square_meters || "N/A"} 
-                      {property.goal ? " ETH" : " m²"}
-                    </p>
-                  </div>
-                </div>
-
-                {/* 🔗 عنوان العقد */}
-                {property.contract && (
-                  <div className="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-600 mb-1">Contract Address</p>
-                        <p className="text-sm font-mono text-slate-900 break-all">
-                          {property.contract}
+                ) : campaignInfo ? (
+                  <>
+                    {/* Raised / Goal */}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-5">
+                        <p className="text-xs text-green-700 mb-1 uppercase font-semibold">
+                          Raised
+                        </p>
+                        <p className="text-3xl font-bold text-green-800">
+                          {raisedEth.toFixed(4)} ETH
                         </p>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => 
-                          window.open(
-                            `https://sepolia.etherscan.io/address/${property.contract}`,
-                            "_blank"
-                          )
-                        }
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </Button>
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+                        <p className="text-xs text-blue-700 mb-1 uppercase font-semibold">
+                          Goal
+                        </p>
+                        <p className="text-3xl font-bold text-blue-800">
+                          {goalEth.toFixed(4)} ETH
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )}
+
+                    {/* Progress Bar */}
+                    <div>
+                      <div className="flex justify-between text-sm text-slate-600 mb-2">
+                        <span>Funding Progress</span>
+                        <span className="font-bold text-blue-600">
+                          {progressPct.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-3">
+                        <div
+                          className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500"
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Deadline / Status */}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1 uppercase font-semibold">
+                          Deadline
+                        </p>
+                        <p className="font-bold text-slate-900 text-sm">
+                          {deadline
+                            ? deadline.toLocaleDateString("en-US", {
+                                month: "long",
+                                day: "numeric",
+                                year: "numeric",
+                              })
+                            : "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1 uppercase font-semibold">
+                          Status
+                        </p>
+                        <p
+                          className={`font-bold text-sm ${
+                            status === "Active"
+                              ? "text-green-600"
+                              : status === "Successful"
+                                ? "text-blue-600"
+                                : "text-red-600"
+                          }`}
+                        >
+                          {status}
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+
+                {/* Contract Address */}
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <p className="text-xs text-slate-500 mb-1 uppercase font-semibold">
+                    Contract Address
+                  </p>
+                  <p className="text-sm font-mono text-slate-800 break-all">
+                    {contractAddr}
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* 💰 بطاقة الشراء */}
+          {/* ─── بطاقة الاستثمار ─── */}
           <div className="lg:sticky lg:top-8 h-fit">
-            <Card className="shadow-2xl border-slate-100">
-              <CardHeader className="bg-gradient-to-br from-blue-900 to-blue-800 text-white rounded-t-xl">
-                <CardTitle className="text-2xl font-bold">Invest Now</CardTitle>
-                <p className="text-blue-200 text-sm">
-                  Start with a small investment and earn monthly income
+            <Card className="shadow-2xl">
+              <CardHeader className="bg-gradient-to-br from-blue-900 to-blue-700 text-white rounded-t-xl">
+                <CardTitle className="text-xl font-bold">Invest Now</CardTitle>
+                <p className="text-blue-200 text-sm mt-1">
+                  ⚡ Auto Mode: Investment is processed automatically from the
+                  platform wallet. No wallet connection needed!
                 </p>
               </CardHeader>
-              <CardContent className="p-6 space-y-6">
-                {/* 💵 السعر */}
-                <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Coins className="w-5 h-5 text-amber-600" />
-                    <span className="text-slate-600">Price per Token</span>
-                  </div>
-                  <p className="text-4xl font-bold text-slate-900">
-                    ${property.token_price || 0}
-                  </p>
-                </div>
-
-                {/* 🎯 إدخال عدد التوكنات */}
-                <div className="space-y-3">
+              <CardContent className="p-6 space-y-5">
+                {/* مبلغ الاستثمار */}
+                <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">
-                    Number of Tokens
+                    Investment Amount
                   </label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max={property.available_tokens || 1}
-                    value={tokensToBuy}
-                    onChange={(e) =>
-                      setTokensToBuy(
-                        Math.max(
-                          1,
-                          Math.min(
-                            property.available_tokens || 1,
-                            parseInt(e.target.value) || 1
-                          )
-                        )
-                      )
-                    }
-                    className="h-14 text-lg text-center font-bold rounded-xl border-2"
-                  />
-                  <p className="text-xs text-slate-500 text-center">
-                    Maximum: {property.available_tokens || 0} tokens
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.001"
+                      min="0.001"
+                      value={investAmount}
+                      onChange={(e) => setInvestAmount(e.target.value)}
+                      className="h-12 text-lg font-bold pr-16 rounded-xl border-2"
+                      disabled={isInvesting}
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">
+                      ETH
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Minimum: 0.001 ETH (Processed automatically)
                   </p>
                 </div>
 
-                {/* 📈 ملخص الاستثمار */}
-                <div className="space-y-3 bg-blue-50 rounded-xl p-4 border border-blue-200">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-600">Total Investment</span>
-                    <span className="text-2xl font-bold text-blue-900">
-                      ${totalInvestment.toFixed(2)}
-                    </span>
+                {/* رسائل */}
+                {error && campaignInfo && (
+                  <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>{error}</span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-600">Expected Monthly Return</span>
-                    <span className="text-lg font-bold text-emerald-600">
-                      ${monthlyReturn.toFixed(2)}
-                    </span>
+                )}
+                {success && (
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm break-all">
+                    {success}
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-600">Expected Annual Return</span>
-                    <span className="text-lg font-bold text-emerald-600">
-                      ${annualReturn.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
+                )}
 
-                {/* 🚀 زر الشراء */}
+                {/* زر الاستثمار */}
                 <Button
-                  onClick={handlePurchase}
+                  onClick={handleInvest}
                   disabled={
-                    isPurchasing || 
-                    property.status !== "available" ||
-                    !property.available_tokens
+                    isInvesting || campaignInfo?.hasEnded || isLoadingInfo
                   }
-                  className="w-full h-14 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-lg font-bold rounded-xl shadow-lg shadow-amber-500/30 disabled:opacity-50"
+                  className="w-full h-12 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold rounded-xl text-base disabled:opacity-50"
                 >
-                  {isPurchasing ? (
-                    "Processing..."
+                  {isInvesting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Processing...
+                    </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-5 h-5 mr-2" />
-                      Invest Tokens
+                      Invest Now
                     </>
                   )}
+                </Button>
+
+                {campaignInfo?.hasEnded && (
+                  <p className="text-center text-sm text-slate-500">
+                    This campaign has ended.
+                  </p>
+                )}
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-slate-500 hover:text-slate-700"
+                  onClick={() =>
+                    window.open(
+                      `http://127.0.0.1:8547/address/${contractAddr}`,
+                      "_blank",
+                    )
+                  }
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  View Contract on Explorer
                 </Button>
               </CardContent>
             </Card>

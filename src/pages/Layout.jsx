@@ -1,44 +1,97 @@
-import React from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { ShoppingCart, Wallet } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import {
+  ShoppingCart,
+  Wallet,
+  ChevronDown,
+  Copy,
+  LogOut,
+  User,
+} from "lucide-react";
+import { supabase } from "../lib/supabaseClient";
+import AuthModal from "./AuthModal";
 
-export default function Layout({ children, currentPageName }) {
+export default function Layout({ children }) {
   const location = useLocation();
-  const [user, setUser] = React.useState({
-    full_name: "Local User",
-    email: "local@example.com",
-  });
-  const [walletAddress, setWalletAddress] = React.useState("0x2f2fa0...19b1");
-  const [isConnecting, setIsConnecting] = React.useState(false);
+  const [user, setUser] = useState(null);
+  const [walletAddress, setWalletAddress] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        fetchWallet(session.user.id);
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+        fetchWallet(session.user.id);
+      } else {
+        setUser(null);
+        setWalletAddress(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const fetchWallet = async (userId) => {
+    const { data } = await supabase
+      .from("wallets")
+      .select("wallet_address")
+      .eq("user_id", userId)
+      .single();
+    if (data) setWalletAddress(data.wallet_address);
+  };
+
+  const handleAuthSuccess = ({ user: authUser, walletAddress: addr }) => {
+    setUser(authUser);
+    setWalletAddress(addr);
+  };
 
   const handleLogout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    alert("Logged out locally (Base44 disabled).");
-  };
-
-  const connectMetaMask = async () => {
-    setIsConnecting(true);
-    try {
-      // محاكاة الاتصال بـ MetaMask
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      setWalletAddress("0x2f2fa0...19b1");
-    } catch (error) {
-      console.error("Error connecting to MetaMask:", error);
-      alert("Failed to connect to MetaMask. Please try again.");
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
-  const disconnectWallet = () => {
     setWalletAddress(null);
+    setShowDropdown(false);
+  };
+
+  const copyAddress = () => {
+    if (walletAddress) {
+      navigator.clipboard.writeText(walletAddress);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const formatAddress = (address) => {
     if (!address) return "";
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  const getUserName = () => {
+    return (
+      user?.user_metadata?.full_name || user?.email?.split("@")[0] || "User"
+    );
   };
 
   const navItems = [
@@ -61,53 +114,104 @@ export default function Layout({ children, currentPageName }) {
               Blog
             </a>
           </div>
-          <div className="flex gap-5 items-center">
-            {/* MetaMask Wallet */}
-            {walletAddress ? (
-              <div className="flex items-center gap-4 bg-white/10 px-4 py-2.5 rounded-lg border border-orange-500/40">
-                <div className="w-6 h-6 bg-gradient-to-br from-orange-500 to-orange-600 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Wallet className="w-3.5 h-3.5 text-white" />
-                </div>
-                <span className="font-mono text-sm font-bold">
-                  {formatAddress(walletAddress)}
-                </span>
-                <button
-                  onClick={disconnectWallet}
-                  className="text-sm hover:text-orange-400 transition-colors font-medium ml-2"
+
+          <div className="flex gap-4 items-center">
+            {user ? (
+              <div className="flex items-center gap-3">
+                {/* عنوان المحفظة */}
+                {walletAddress && (
+                  <button
+                    onClick={copyAddress}
+                    className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg border border-orange-500/40 transition-all"
+                  >
+                    <div className="w-5 h-5 bg-gradient-to-br from-orange-500 to-orange-600 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Wallet className="w-3 h-3 text-white" />
+                    </div>
+                    <span className="font-mono text-xs font-bold">
+                      {formatAddress(walletAddress)}
+                    </span>
+                    <Copy className="w-3 h-3 text-white/60" />
+                    {copied && (
+                      <span className="text-xs text-orange-400">Copied!</span>
+                    )}
+                  </button>
+                )}
+
+                {/* قائمة المستخدم */}
+                <div
+                  className="relative"
+                  ref={dropdownRef}
                 >
-                  Disconnect
-                </button>
+                  <button
+                    onClick={() => setShowDropdown(!showDropdown)}
+                    className="flex items-center gap-2 hover:text-orange-400 transition-colors"
+                  >
+                    <div className="w-7 h-7 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold text-xs">
+                      {getUserName().charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-xs font-medium hidden sm:block">
+                      {getUserName()}
+                    </span>
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+
+                  {showDropdown && (
+                    <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50">
+                      <div className="px-4 py-2 border-b border-gray-100">
+                        <p className="text-xs font-semibold text-gray-800">
+                          {getUserName()}
+                        </p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {user.email}
+                        </p>
+                      </div>
+                      {walletAddress && (
+                        <div className="px-4 py-3 border-b border-gray-100">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <p className="text-xs text-gray-400">
+                              Wallet Address
+                            </p>
+                            <button
+                              onClick={copyAddress}
+                              className="text-xs text-orange-500 hover:text-orange-600 flex items-center gap-1"
+                            >
+                              <Copy className="w-3 h-3" />
+                              {copied ? "Copied!" : "Copy"}
+                            </button>
+                          </div>
+                          <p className="text-xs font-mono text-gray-700 break-all leading-relaxed">
+                            {walletAddress}
+                          </p>
+                        </div>
+                      )}
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Sign Out
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <button
-                onClick={connectMetaMask}
-                disabled={isConnecting}
-                className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 px-4 py-2.5 rounded-lg font-medium transition-all shadow-lg hover:shadow-xl disabled:opacity-50 text-sm"
+                onClick={() => setShowAuthModal(true)}
+                className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 px-4 py-2 rounded-lg font-semibold text-sm transition-all shadow-md hover:shadow-lg"
               >
-                <Wallet className="w-4 h-4" />
-                {isConnecting ? "Connecting..." : "Connect MetaMask"}
+                <User className="w-4 h-4" />
+                Sign In / Register
               </button>
             )}
-
-            {/* User Info */}
-            <span className="text-xs font-medium">
-              {user?.full_name || user?.email}
-            </span>
-            <button
-              onClick={handleLogout}
-              className="text-xs hover:text-orange-400 transition-colors font-medium"
-            >
-              Sign Out
-            </button>
           </div>
         </div>
       </div>
 
       {/* Main Navigation */}
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+      <nav className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            {/* Logo */}
             <Link
               to={createPageUrl("HomePage")}
               className="flex items-center gap-3"
@@ -123,7 +227,6 @@ export default function Layout({ children, currentPageName }) {
               />
             </Link>
 
-            {/* Navigation Links */}
             <div className="hidden md:flex items-center gap-8">
               {navItems.map((item) => (
                 <Link
@@ -140,7 +243,6 @@ export default function Layout({ children, currentPageName }) {
               ))}
             </div>
 
-            {/* Cart Icon */}
             <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
               <ShoppingCart className="w-5 h-5 text-gray-700" />
             </button>
@@ -235,6 +337,13 @@ export default function Layout({ children, currentPageName }) {
           </div>
         </div>
       </footer>
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthSuccess={handleAuthSuccess}
+      />
     </div>
   );
 }
