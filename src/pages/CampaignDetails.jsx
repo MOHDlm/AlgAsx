@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
 import { CAMPAIGN_CONTRACT_ABI } from "../constants";
@@ -18,7 +18,7 @@ const CampaignDetails = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL;
+  const RPC_URL = import.meta.env.VITE_LOCAL_RPC_URL;
   const PRIVATE_KEY = import.meta.env.VITE_PRIVATE_KEY;
   const propertyFromState = location.state?.property;
 
@@ -42,7 +42,7 @@ const CampaignDetails = () => {
         const contract = new ethers.Contract(
           address,
           CAMPAIGN_CONTRACT_ABI,
-          provider
+          provider,
         );
 
         const [goal, raised, deadline, finalized] = await Promise.all([
@@ -134,8 +134,8 @@ const CampaignDetails = () => {
       if (balance < amountWei + estimatedGas) {
         throw new Error(
           `⚠️ Platform wallet has insufficient funds.\nAvailable: ${ethers.formatEther(
-            balance
-          )} ETH\nRequired: ${investAmount} ETH + gas fees`
+            balance,
+          )} ETH\nRequired: ${investAmount} ETH + gas fees`,
         );
       }
 
@@ -145,7 +145,7 @@ const CampaignDetails = () => {
       const contract = new ethers.Contract(
         address,
         CAMPAIGN_CONTRACT_ABI,
-        wallet
+        wallet,
       );
 
       const tx = await contract.contribute({
@@ -157,8 +157,8 @@ const CampaignDetails = () => {
       setTxStatus(
         `⏳ Transaction sent! Hash: ${tx.hash.slice(
           0,
-          10
-        )}... Waiting for confirmation...`
+          10,
+        )}... Waiting for confirmation...`,
       );
 
       // انتظار التأكيد
@@ -236,7 +236,7 @@ const CampaignDetails = () => {
 
   const progress = Math.min(
     (parseFloat(campaign.raised) / parseFloat(campaign.goal)) * 100,
-    100
+    100,
   );
 
   return (
@@ -440,8 +440,8 @@ const CampaignDetails = () => {
                       txStatus.includes("❌")
                         ? "bg-red-50 text-red-700 border-red-200"
                         : txStatus.includes("✅")
-                        ? "bg-green-50 text-green-700 border-green-200"
-                        : "bg-blue-50 text-blue-700 border-blue-200"
+                          ? "bg-green-50 text-green-700 border-green-200"
+                          : "bg-blue-50 text-blue-700 border-blue-200"
                     }`}
                   >
                     {txStatus}
