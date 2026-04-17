@@ -34,7 +34,6 @@ const CreateCampaign = () => {
     setStep(0);
 
     try {
-      // ✅ استخدام MetaMask مباشرة
       if (!window.ethereum)
         throw new Error("MetaMask غير موجود! ثبّت MetaMask أولاً.");
 
@@ -45,9 +44,15 @@ const CreateCampaign = () => {
       if (!tokenRate || isNaN(parseFloat(tokenRate)))
         throw new Error("Token Rate غير صحيح");
 
-      // ✅ الحصول على Signer من MetaMask
+      // ✅ استخدام MetaMask - بدون طلب اتصال إذا كان متصل بالفعل
       const provider = new ethers.BrowserProvider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
+
+      // تحقق إذا كان متصل بالفعل - إذا لا، اطلب الاتصال
+      const accounts = await provider.listAccounts();
+      if (accounts.length === 0) {
+        await provider.send("eth_requestAccounts", []);
+      }
+
       const signer = await provider.getSigner();
       const walletAddress = await signer.getAddress();
 
@@ -78,7 +83,6 @@ const CreateCampaign = () => {
         );
       }
 
-      // ✅ نشر العقد باستخدام MetaMask
       const campaignFactory = new ethers.ContractFactory(
         CAMPAIGN_CONTRACT_ABI,
         CAMPAIGN_BYTECODE,
@@ -109,7 +113,6 @@ const CreateCampaign = () => {
         `⏳ Step 2/2: Registering campaign in Factory...\nContract: ${campaignAddress}`,
       );
 
-      // ✅ Factory contract باستخدام MetaMask
       const factoryContract = new ethers.Contract(
         FACTORY_CONTRACT_ADDRESS,
         FACTORY_CONTRACT_ABI,
