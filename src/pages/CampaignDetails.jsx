@@ -220,9 +220,9 @@ const CampaignDetails = () => {
 
       // جيب encrypted_key من Supabase
       const { data: profile, error: profileError } = await supabase
-        .from("users")
+        .from("wallets")
         .select("encrypted_key, wallet_address")
-        .eq("id", user.id)
+        .eq("user_id", user.id)
         .single();
 
       if (profileError || !profile?.encrypted_key) {
