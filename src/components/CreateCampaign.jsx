@@ -44,13 +44,14 @@ const CreateCampaign = () => {
       if (!tokenRate || isNaN(parseFloat(tokenRate)))
         throw new Error("Token Rate غير صحيح");
 
-      // ✅ استخدام MetaMask - بدون طلب اتصال إذا كان متصل بالفعل
       const provider = new ethers.BrowserProvider(window.ethereum);
 
-      // تحقق إذا كان متصل بالفعل - إذا لا، اطلب الاتصال
-      const accounts = await provider.listAccounts();
-      if (accounts.length === 0) {
-        await provider.send("eth_requestAccounts", []);
+      // ✅ الحل الصحيح: eth_accounts لا يفتح popup - يرجع الحسابات الموجودة فقط
+      const existingAccounts = await window.ethereum.request({
+        method: "eth_accounts",
+      });
+      if (existingAccounts.length === 0) {
+        await window.ethereum.request({ method: "eth_requestAccounts" });
       }
 
       const signer = await provider.getSigner();
