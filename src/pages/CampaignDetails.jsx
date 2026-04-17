@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
+import PropTypes from "prop-types";
 import { CAMPAIGN_CONTRACT_ABI } from "../constants";
 import { Button } from "@/components/ui/button";
+import { supabase } from "../lib/supabaseClient";
 import {
   ArrowLeft,
   MapPin,
@@ -11,15 +13,102 @@ import {
   Wallet,
   AlertCircle,
   CheckCircle,
+  Lock,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
+// ─── Password Modal ───────────────────────────────────────────────────────────
+const PasswordModal = ({ onConfirm, onCancel, loading, error }) => {
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+            <Lock className="w-5 h-5 text-blue-600" />
+          </div>
+          <h3 className="text-xl font-bold text-slate-900">
+            Confirm Investment
+          </h3>
+        </div>
+        <p className="text-slate-500 text-sm mb-6">
+          Enter your account password to sign the transaction with your wallet.
+        </p>
+
+        <div className="relative mb-4">
+          <input
+            type={show ? "text" : "password"}
+            placeholder="Your password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && onConfirm(password)}
+            className="w-full px-4 py-3 pr-12 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={() => setShow(!show)}
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          >
+            {show ? (
+              <EyeOff className="w-4 h-4" />
+            ) : (
+              <Eye className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg mb-4">
+            {error}
+          </div>
+        )}
+
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="flex-1 py-3 border-2 border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50 transition-all disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(password)}
+            disabled={loading || !password}
+            className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Signing...
+              </>
+            ) : (
+              "Confirm"
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+PasswordModal.propTypes = {
+  onConfirm: PropTypes.func.isRequired,
+  onCancel: PropTypes.func.isRequired,
+  loading: PropTypes.bool.isRequired,
+  error: PropTypes.string,
+};
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 const CampaignDetails = () => {
   const { address } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
 
   const RPC_URL = import.meta.env.VITE_LOCAL_RPC_URL;
-  const PRIVATE_KEY = import.meta.env.VITE_PRIVATE_KEY;
   const propertyFromState = location.state?.property;
 
   const [campaign, setCampaign] = useState(null);
@@ -28,6 +117,11 @@ const CampaignDetails = () => {
   const [investAmount, setInvestAmount] = useState("0.001");
   const [isInvesting, setIsInvesting] = useState(false);
   const [txStatus, setTxStatus] = useState("");
+
+  // Password modal state
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
 
   useEffect(() => {
     if (!address || !address.startsWith("0x")) {
@@ -92,18 +186,13 @@ const CampaignDetails = () => {
     fetchCampaignData();
   }, [address, RPC_URL, propertyFromState]);
 
-  const handleAutoInvest = async () => {
+  // ─── Step 1: زر Invest Now يفتح PasswordModal ─────────────────────────────
+  const handleInvestClick = () => {
     const amount = parseFloat(investAmount);
     if (!investAmount || isNaN(amount) || amount <= 0) {
       alert("⚠️ Please enter a valid amount (minimum: 0.001 ETH)");
       return;
     }
-
-    if (!PRIVATE_KEY) {
-      alert("⚠️ Configuration Error: VITE_PRIVATE_KEY is missing in .env file");
-      return;
-    }
-
     if (!campaign.canInvest) {
       let reason = "Investment not available";
       if (campaign.isExpired) reason = "⏰ Campaign deadline has passed";
@@ -112,36 +201,83 @@ const CampaignDetails = () => {
       alert(reason);
       return;
     }
+    setPasswordError("");
+    setShowPasswordModal(true);
+  };
 
-    setIsInvesting(true);
-    setTxStatus("🔄 Preparing transaction from platform wallet...");
+  // ─── Step 2: بعد إدخال كلمة المرور ──────────────────────────────────────
+  const handlePasswordConfirm = async (password) => {
+    setPasswordLoading(true);
+    setPasswordError("");
 
     try {
-      // استخدام محفظتك الخاصة مباشرة
+      // جيب المستخدم الحالي
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError || !user) throw new Error("Please log in first");
+
+      // جيب encrypted_key من Supabase
+      const { data: profile, error: profileError } = await supabase
+        .from("users")
+        .select("encrypted_key, wallet_address")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError || !profile?.encrypted_key) {
+        throw new Error("Wallet not found. Please contact support.");
+      }
+
+      // فك تشفير المفتاح الخاص
+      let privateKey;
+      try {
+        const wallet = await ethers.Wallet.fromEncryptedJson(
+          profile.encrypted_key,
+          password,
+        );
+        privateKey = wallet.privateKey;
+      } catch {
+        setPasswordError("❌ Incorrect password. Please try again.");
+        setPasswordLoading(false);
+        return;
+      }
+
+      // أغلق الـ modal وابدأ الاستثمار
+      setShowPasswordModal(false);
+      setPasswordLoading(false);
+      await executeInvestment(privateKey);
+    } catch (err) {
+      setPasswordError(err.message || "An error occurred");
+      setPasswordLoading(false);
+    }
+  };
+
+  // ─── Step 3: تنفيذ الـ transaction ──────────────────────────────────────
+  const executeInvestment = async (privateKey) => {
+    setIsInvesting(true);
+    setTxStatus("🔄 Preparing your wallet...");
+
+    try {
       const provider = new ethers.JsonRpcProvider(RPC_URL);
-      const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+      const wallet = new ethers.Wallet(privateKey, provider);
 
-      console.log("💼 Platform Wallet:", wallet.address);
+      console.log("💼 Investor Wallet:", wallet.address);
 
-      // التحقق من رصيد المحفظة
       const balance = await provider.getBalance(wallet.address);
       const amountWei = ethers.parseEther(investAmount);
       const estimatedGas = ethers.parseEther("0.002");
 
-      console.log("💰 Platform Balance:", ethers.formatEther(balance), "ETH");
-      console.log("💸 Investment Amount:", investAmount, "ETH");
+      console.log("💰 Balance:", ethers.formatEther(balance), "ETH");
 
       if (balance < amountWei + estimatedGas) {
         throw new Error(
-          `⚠️ Platform wallet has insufficient funds.\nAvailable: ${ethers.formatEther(
-            balance,
-          )} ETH\nRequired: ${investAmount} ETH + gas fees`,
+          `Insufficient funds. Available: ${parseFloat(ethers.formatEther(balance)).toFixed(4)} ETH`,
         );
       }
 
-      setTxStatus("📝 Signing transaction automatically...");
+      setTxStatus("📝 Signing transaction with your wallet...");
 
-      // الاتصال بالعقد وإرسال المعاملة
       const contract = new ethers.Contract(
         address,
         CAMPAIGN_CONTRACT_ABI,
@@ -155,21 +291,15 @@ const CampaignDetails = () => {
 
       console.log("✅ Transaction Hash:", tx.hash);
       setTxStatus(
-        `⏳ Transaction sent! Hash: ${tx.hash.slice(
-          0,
-          10,
-        )}... Waiting for confirmation...`,
+        `⏳ Transaction sent! Hash: ${tx.hash.slice(0, 10)}... Waiting for confirmation...`,
       );
 
-      // انتظار التأكيد
       const receipt = await tx.wait();
 
       if (receipt.status === 1) {
-        console.log("🎉 Transaction confirmed in block:", receipt.blockNumber);
-        setTxStatus("✅ Investment Successful! Reloading page...");
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
+        console.log("🎉 Confirmed in block:", receipt.blockNumber);
+        setTxStatus("✅ Investment Successful! Reloading...");
+        setTimeout(() => window.location.reload(), 2000);
       } else {
         throw new Error("Transaction failed on blockchain");
       }
@@ -177,17 +307,12 @@ const CampaignDetails = () => {
       console.error("❌ Investment Error:", err);
 
       let errorMsg = "Transaction failed";
-
       if (err.message.includes("insufficient funds")) {
-        errorMsg =
-          "💳 Platform wallet has insufficient Sepolia ETH. Please add funds to continue.";
+        errorMsg = "💳 Insufficient ETH in your wallet.";
       } else if (err.reason) {
         errorMsg = `Contract Error: ${err.reason}`;
       } else if (err.code === "CALL_EXCEPTION") {
-        errorMsg =
-          "🚫 Contract rejected the transaction. Campaign may be ended or goal reached.";
-      } else if (err.message.includes("nonce")) {
-        errorMsg = "⏳ Transaction nonce error. Please try again.";
+        errorMsg = "🚫 Contract rejected the transaction.";
       } else {
         errorMsg = err.message || "Unknown error occurred";
       }
@@ -198,6 +323,7 @@ const CampaignDetails = () => {
     }
   };
 
+  // ─── Render ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -241,6 +367,19 @@ const CampaignDetails = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-12 px-4 md:px-8">
+      {/* Password Modal */}
+      {showPasswordModal && (
+        <PasswordModal
+          onConfirm={handlePasswordConfirm}
+          onCancel={() => {
+            setShowPasswordModal(false);
+            setPasswordError("");
+          }}
+          loading={passwordLoading}
+          error={passwordError}
+        />
+      )}
+
       <div className="max-w-6xl mx-auto">
         <Button
           variant="outline"
@@ -252,6 +391,7 @@ const CampaignDetails = () => {
         </Button>
 
         <div className="grid lg:grid-cols-3 gap-8">
+          {/* Left: Image + Info */}
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white rounded-2xl overflow-hidden shadow-sm h-96 relative group">
               <img
@@ -346,9 +486,7 @@ const CampaignDetails = () => {
                     Status
                   </p>
                   <p
-                    className={`font-bold ${
-                      campaign.canInvest ? "text-green-600" : "text-red-600"
-                    }`}
+                    className={`font-bold ${campaign.canInvest ? "text-green-600" : "text-red-600"}`}
                   >
                     {campaign.canInvest ? "Active" : "Closed"}
                   </p>
@@ -357,6 +495,7 @@ const CampaignDetails = () => {
             </div>
           </div>
 
+          {/* Right: Invest Panel */}
           <div className="lg:col-span-1">
             <div className="bg-white p-6 rounded-2xl shadow-xl border-2 border-blue-100 sticky top-6">
               <div className="flex items-center gap-2 mb-3">
@@ -368,9 +507,9 @@ const CampaignDetails = () => {
 
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-3 rounded-lg mb-4">
                 <p className="text-xs text-blue-800 leading-relaxed">
-                  <strong className="text-blue-900">⚡ Auto Mode:</strong>{" "}
-                  Investment is processed automatically from the platform
-                  wallet. No wallet connection needed!
+                  <strong className="text-blue-900">🔐 Secure:</strong>{" "}
+                  Investment is signed with your personal wallet. No MetaMask
+                  needed!
                 </p>
               </div>
 
@@ -407,12 +546,12 @@ const CampaignDetails = () => {
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-1.5">
-                    Minimum: 0.001 ETH (Processed automatically)
+                    Minimum: 0.001 ETH
                   </p>
                 </div>
 
                 <Button
-                  onClick={handleAutoInvest}
+                  onClick={handleInvestClick}
                   disabled={isInvesting || !campaign.canInvest}
                   className="w-full py-6 text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                 >
