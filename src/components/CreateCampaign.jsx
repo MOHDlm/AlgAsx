@@ -9,8 +9,6 @@ import {
   IDENTITY_CONTRACT_ADDRESS,
 } from "../constants.js";
 
-// ✅ Bytecode لعقد RealEstateCampaign - يجب أن تضع bytecode العقد الحقيقي هنا
-// احصل عليه من: artifacts/contracts/RealEstateCampaign.sol/RealEstateCampaign.json
 const CAMPAIGN_BYTECODE = import.meta.env.VITE_CAMPAIGN_BYTECODE || "";
 
 const CreateCampaign = () => {
@@ -36,11 +34,9 @@ const CreateCampaign = () => {
     setStep(0);
 
     try {
-      const rpcUrl = import.meta.env.VITE_LOCAL_RPC_URL;
-      const privateKey = import.meta.env.VITE_PRIVATE_KEY;
-
-      if (!rpcUrl) throw new Error("VITE_LOCAL_RPC_URL غير موجود في .env");
-      if (!privateKey) throw new Error("VITE_PRIVATE_KEY غير موجود في .env");
+      // ✅ استخدام MetaMask مباشرة
+      if (!window.ethereum)
+        throw new Error("MetaMask غير موجود! ثبّت MetaMask أولاً.");
 
       if (!goal || isNaN(parseFloat(goal)))
         throw new Error("Funding Goal غير صحيح");
@@ -49,11 +45,15 @@ const CreateCampaign = () => {
       if (!tokenRate || isNaN(parseFloat(tokenRate)))
         throw new Error("Token Rate غير صحيح");
 
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const wallet = new ethers.Wallet(privateKey, provider);
-      console.log("💼 Wallet:", wallet.address);
+      // ✅ الحصول على Signer من MetaMask
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      const signer = await provider.getSigner();
+      const walletAddress = await signer.getAddress();
 
-      const balance = await provider.getBalance(wallet.address);
+      console.log("💼 Wallet:", walletAddress);
+
+      const balance = await provider.getBalance(walletAddress);
       console.log("💰 Balance:", ethers.formatEther(balance), "ETH");
       if (balance === 0n) throw new Error("Wallet has no ETH for gas fees.");
 
@@ -68,11 +68,7 @@ const CreateCampaign = () => {
       setStep(1);
       setMessage("⏳ Step 1/2: Deploying Campaign Contract...");
 
-      let campaignAddress;
-
       if (!CAMPAIGN_BYTECODE) {
-        // ── fallback: إذا لم يكن Bytecode متاحاً، نستخدم عنوان TOKEN كـ Campaign مؤقتاً
-        // هذا ليس صحيحاً — يجب توفير VITE_CAMPAIGN_BYTECODE
         throw new Error(
           "❌ VITE_CAMPAIGN_BYTECODE غير موجود في .env\n\n" +
             "للحصول عليه:\n" +
@@ -82,11 +78,11 @@ const CreateCampaign = () => {
         );
       }
 
-      // نشر العقد
+      // ✅ نشر العقد باستخدام MetaMask
       const campaignFactory = new ethers.ContractFactory(
         CAMPAIGN_CONTRACT_ABI,
         CAMPAIGN_BYTECODE,
-        wallet,
+        signer,
       );
 
       const config = {
@@ -98,15 +94,13 @@ const CreateCampaign = () => {
       };
 
       const campaignContract = await campaignFactory.deploy(
-        wallet.address,
+        walletAddress,
         config,
-        {
-          gasLimit: 5000000,
-        },
+        { gasLimit: 5000000 },
       );
 
       await campaignContract.waitForDeployment();
-      campaignAddress = await campaignContract.getAddress();
+      const campaignAddress = await campaignContract.getAddress();
       console.log("✅ Campaign deployed at:", campaignAddress);
 
       // ─── Step 2: تسجيل في Factory ─────────────────────────
@@ -115,20 +109,20 @@ const CreateCampaign = () => {
         `⏳ Step 2/2: Registering campaign in Factory...\nContract: ${campaignAddress}`,
       );
 
+      // ✅ Factory contract باستخدام MetaMask
       const factoryContract = new ethers.Contract(
         FACTORY_CONTRACT_ADDRESS,
         FACTORY_CONTRACT_ABI,
-        wallet,
+        signer,
       );
 
-      const isApproved = await factoryContract.approvedDevelopers(
-        wallet.address,
-      );
+      const isApproved =
+        await factoryContract.approvedDevelopers(walletAddress);
       const ownerAddress = await factoryContract.owner();
 
       if (
         !isApproved &&
-        ownerAddress.toLowerCase() !== wallet.address.toLowerCase()
+        ownerAddress.toLowerCase() !== walletAddress.toLowerCase()
       ) {
         throw new Error(
           "حسابك غير معتمد كمطور. اطلب من مالك العقد تنفيذ approveDeveloper() أولاً.",
@@ -136,7 +130,7 @@ const CreateCampaign = () => {
       }
 
       const params = {
-        campaignAddress: campaignAddress, // ✅ العنوان الصحيح للحملة
+        campaignAddress: campaignAddress,
         tokenAddress: TOKEN_CONTRACT_ADDRESS,
         goal: goalInWei,
         durationMinutes: BigInt(durationInMinutes),
@@ -181,6 +175,8 @@ const CreateCampaign = () => {
           "حسابك غير معتمد. اطلب من المالك تنفيذ approveDeveloper() أولاً.";
       } else if (error.message?.includes("insufficient funds")) {
         errorMsg = "رصيد ETH غير كافٍ لرسوم الغاز";
+      } else if (error.code === 4001) {
+        errorMsg = "رفضت العملية في MetaMask.";
       }
       setMessage(`❌ ${errorMsg}`);
     } finally {
@@ -212,7 +208,6 @@ const CreateCampaign = () => {
           </div>
         </div>
 
-        {/* Progress Steps */}
         {loading && step > 0 && (
           <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
             <div className="flex items-center gap-3">
@@ -438,26 +433,6 @@ const CreateCampaign = () => {
             </div>
           )}
         </form>
-
-        {/* إرشادات */}
-        <div className="mt-8 p-5 bg-orange-50 rounded-lg border border-orange-100">
-          <h3 className="font-semibold text-gray-900 mb-3">
-            ⚙️ Setup Required:
-          </h3>
-          <div className="space-y-2 text-sm text-gray-600">
-            <p className="font-medium text-orange-700">أضف في ملف .env:</p>
-            <code className="block bg-orange-100 p-2 rounded text-xs">
-              VITE_CAMPAIGN_BYTECODE=0x608060...
-            </code>
-            <p className="text-xs text-gray-500">
-              احصل على الـ bytecode من:
-              <br />
-              <code>
-                artifacts/contracts/RealEstateCampaign.sol/RealEstateCampaign.json
-              </code>
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );
