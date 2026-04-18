@@ -6,13 +6,22 @@ import { supabase } from "../lib/supabaseClient";
 import {
   FACTORY_CONTRACT_ADDRESS,
   FACTORY_CONTRACT_ABI,
-  TOKEN_CONTRACT_ADDRESS,
   CAMPAIGN_CONTRACT_ABI,
   IDENTITY_CONTRACT_ADDRESS,
+  COMPLIANCE_CONTRACT_ADDRESS,
 } from "../constants.js";
 
 const CAMPAIGN_BYTECODE = import.meta.env.VITE_CAMPAIGN_BYTECODE || "";
-const RPC_URL = import.meta.env.VITE_RPC_URL || "http://localhost:8545";
+const TOKEN_BYTECODE = import.meta.env.VITE_TOKEN_BYTECODE || "";
+const RPC_URL = import.meta.env.VITE_LOCAL_RPC_URL || "http://localhost:8545";
+
+// ─── Token ABI (minimal — only what we need) ─────────────────────
+const TOKEN_CONTRACT_ABI = [
+  "constructor(string name, string symbol, address compliance, address identityRegistry, string propertyId, string location, uint256 totalValue, string documentHash)",
+  "function setMinter(address _minter, bool _status) external",
+  "function minters(address) view returns (bool)",
+  "function owner() view returns (address)",
+];
 
 // ─── Popup كلمة المرور ────────────────────────────────────────────
 function PasswordModal({ onConfirm, onCancel, loading, error }) {
@@ -85,6 +94,8 @@ const CreateCampaign = () => {
   const [goal, setGoal] = useState("");
   const [duration, setDuration] = useState("");
   const [tokenRate, setTokenRate] = useState("");
+  const [tokenName, setTokenName] = useState("");
+  const [tokenSymbol, setTokenSymbol] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [imageUrl, setImageUrl] = useState("");
@@ -133,7 +144,10 @@ const CreateCampaign = () => {
         throw new Error("كلمة المرور غير صحيحة ❌");
       }
 
-      const provider = new ethers.JsonRpcProvider(RPC_URL);
+      const provider = new ethers.JsonRpcProvider(RPC_URL, undefined, {
+        staticNetwork: true,
+        fetchOptions: { headers: { "ngrok-skip-browser-warning": "true" } },
+      });
       const signer = wallet.connect(provider);
 
       return { signer, walletAddress: walletData.wallet_address, provider };
@@ -146,6 +160,9 @@ const CreateCampaign = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (!tokenName.trim()) return setMessage("❌ Token Name مطلوب");
+    if (!tokenSymbol.trim() || tokenSymbol.length > 6)
+      return setMessage("❌ Token Symbol مطلوب (2-6 أحرف)");
     if (!goal || isNaN(parseFloat(goal)))
       return setMessage("❌ Funding Goal غير صحيح");
     if (!duration || isNaN(parseInt(duration)))
@@ -196,17 +213,53 @@ const CreateCampaign = () => {
       if (balance === 0n)
         throw new Error("رصيد المحفظة صفر — لا يكفي لرسوم الغاز");
 
-      // Step 1
+      // ── Step 1: Deploy Token Contract ──────────────────────────
       setStep(1);
-      setMessage("⏳ Step 1/2: Deploying Campaign Contract...");
+      setMessage(`⏳ Step 1/3: Deploying Token Contract (${tokenSymbol})...`);
+
+      if (!TOKEN_BYTECODE) {
+        throw new Error(
+          "❌ VITE_TOKEN_BYTECODE غير موجود في .env\n\n" +
+            "1. افتح Remix → RealEstateToken → Compilation Details\n" +
+            "2. انسخ الـ Bytecode\n" +
+            "3. أضفه في .env كـ VITE_TOKEN_BYTECODE=0x...",
+        );
+      }
+
+      const propId = propertyId || `PROP-${Date.now()}`;
+      const propLocation = location || "Algeria";
+      const docHash = documentHash || "QmPlaceholder";
+
+      const tokenFactory = new ethers.ContractFactory(
+        TOKEN_CONTRACT_ABI,
+        TOKEN_BYTECODE,
+        signer,
+      );
+
+      const tokenContract = await tokenFactory.deploy(
+        tokenName,
+        tokenSymbol.toUpperCase(),
+        COMPLIANCE_CONTRACT_ADDRESS,
+        IDENTITY_CONTRACT_ADDRESS,
+        propId,
+        propLocation,
+        totalValueInWei,
+        docHash,
+        { gasLimit: 5000000 },
+      );
+
+      await tokenContract.waitForDeployment();
+      const tokenAddress = await tokenContract.getAddress();
+      console.log("✅ Token deployed at:", tokenAddress);
+
+      // ── Step 2: Deploy Campaign Contract ───────────────────────
+      setStep(2);
+      setMessage(
+        `⏳ Step 2/3: Deploying Campaign Contract...\nToken: ${tokenAddress}`,
+      );
 
       if (!CAMPAIGN_BYTECODE) {
-        throw new Error(
-          "❌ VITE_CAMPAIGN_BYTECODE غير موجود في .env\n\n" +
-            "1. افتح artifacts/contracts/RealEstateCampaign.sol/RealEstateCampaign.json\n" +
-            "2. انسخ 'bytecode'\n" +
-            "3. أضفها في .env كـ VITE_CAMPAIGN_BYTECODE=0x...",
-        );
+        throw new Error("❌ VITE_CAMPAIGN_BYTECODE غير موجود في .env");
       }
 
       const campaignFactory = new ethers.ContractFactory(
@@ -216,7 +269,7 @@ const CreateCampaign = () => {
       );
 
       const config = {
-        tokenAddress: TOKEN_CONTRACT_ADDRESS,
+        tokenAddress,
         identityRegistry: IDENTITY_CONTRACT_ADDRESS,
         goal: goalInWei,
         durationMinutes: BigInt(durationInMinutes),
@@ -233,10 +286,29 @@ const CreateCampaign = () => {
       const campaignAddress = await campaignContract.getAddress();
       console.log("✅ Campaign deployed at:", campaignAddress);
 
-      // Step 2
-      setStep(2);
+      // ── Step 2b: Grant Campaign MINTER role on Token ───────────
       setMessage(
-        `⏳ Step 2/2: Registering campaign in Factory...\nContract: ${campaignAddress}`,
+        `⏳ Step 2/3: Granting mint permission to Campaign...\nCampaign: ${campaignAddress}`,
+      );
+
+      const tokenContractInstance = new ethers.Contract(
+        tokenAddress,
+        TOKEN_CONTRACT_ABI,
+        signer,
+      );
+
+      const setMinterTx = await tokenContractInstance.setMinter(
+        campaignAddress,
+        true,
+        { gasLimit: 100000 },
+      );
+      await setMinterTx.wait();
+      console.log("✅ Campaign set as minter for token");
+
+      // ── Step 3: Register in Factory ────────────────────────────
+      setStep(3);
+      setMessage(
+        `⏳ Step 3/3: Registering in Factory...\nCampaign: ${campaignAddress}`,
       );
 
       const factoryContract = new ethers.Contract(
@@ -260,7 +332,7 @@ const CreateCampaign = () => {
 
       const params = {
         campaignAddress,
-        tokenAddress: TOKEN_CONTRACT_ADDRESS,
+        tokenAddress, // ← الآن عنوان التوكن الجديد
         goal: goalInWei,
         durationMinutes: BigInt(durationInMinutes),
         tokenWeiRate: tokenRateValue,
@@ -272,9 +344,9 @@ const CreateCampaign = () => {
         image:
           imageUrl ||
           "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
-        propertyId: propertyId || `PROP-${Date.now()}`,
-        location: location || "Algeria",
-        documentHash: documentHash || "QmPlaceholder",
+        propertyId: propId,
+        location: propLocation,
+        documentHash: docHash,
         totalValue: totalValueInWei,
       };
 
@@ -286,11 +358,11 @@ const CreateCampaign = () => {
       );
       await tx.wait();
 
-      setStep(3);
+      setStep(4);
       setMessage(
-        `✅ Campaign created successfully!\n📍 Address: ${campaignAddress}`,
+        `✅ Campaign created successfully!\n🪙 Token (${tokenSymbol}): ${tokenAddress}\n📍 Campaign: ${campaignAddress}\n\n⚠️ تذكر: أضف Token في Compliance عبر authorizeToken()`,
       );
-      setTimeout(() => navigate("/properties"), 2000);
+      setTimeout(() => navigate("/properties"), 3000);
     } catch (error) {
       console.error("❌ Error:", error);
       let errorMsg = error.message || "Failed to create campaign";
@@ -308,7 +380,8 @@ const CreateCampaign = () => {
 
   const stepLabels = [
     "",
-    "Deploying Campaign Contract...",
+    `Deploying Token (${tokenSymbol || "TOKEN"})...`,
+    "Deploying Campaign + Setting Minter...",
     "Registering in Factory...",
     "Done! ✅",
   ];
@@ -333,9 +406,7 @@ const CreateCampaign = () => {
             <h2 className="text-3xl font-bold text-gray-900 mb-2">
               Create New Property Campaign 🏗️
             </h2>
-            <p className="text-gray-600">
-              محفظتك المدمجة تتصل تلقائياً — لا حاجة لـ MetaMask
-            </p>
+            <p className="text-gray-600">كل حملة تنشئ توكن خاص بها تلقائياً</p>
             <div className="mt-3 inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-3 py-1 rounded-full text-sm font-medium">
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
               Embedded Wallet — No MetaMask Needed ✅
@@ -351,7 +422,7 @@ const CreateCampaign = () => {
                 </span>
               </div>
               <div className="mt-3 flex gap-2">
-                {[1, 2, 3].map((s) => (
+                {[1, 2, 3, 4].map((s) => (
                   <div
                     key={s}
                     className={`h-1.5 flex-1 rounded-full transition-all ${step >= s ? "bg-blue-500" : "bg-gray-200"}`}
@@ -365,6 +436,45 @@ const CreateCampaign = () => {
             onSubmit={handleSubmit}
             className="space-y-5"
           >
+            {/* ── Token Info Section ── */}
+            <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl">
+              <h3 className="text-sm font-bold text-orange-700 mb-3 flex items-center gap-2">
+                🪙 معلومات التوكن — كل حملة لها توكن خاص
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Token Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={tokenName}
+                    onChange={(e) => setTokenName(e.target.value)}
+                    placeholder="e.g., Algiers Apartment Token"
+                    required
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Token Symbol * (2-6 أحرف)
+                  </label>
+                  <input
+                    type="text"
+                    value={tokenSymbol}
+                    onChange={(e) =>
+                      setTokenSymbol(e.target.value.toUpperCase().slice(0, 6))
+                    }
+                    placeholder="e.g., AAT"
+                    required
+                    maxLength={6}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Property Info ── */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
                 Property Title *
@@ -513,6 +623,21 @@ const CreateCampaign = () => {
               />
             </div>
 
+            {/* ── Info Box ── */}
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+              <strong>📋 ما سيحدث عند الإنشاء:</strong>
+              <ol className="mt-1 list-decimal list-inside space-y-0.5">
+                <li>نشر Token contract جديد ({tokenSymbol || "TOKEN"})</li>
+                <li>نشر Campaign contract وربطه بالتوكن</li>
+                <li>منح Campaign صلاحية mint للتوكن تلقائياً</li>
+                <li>تسجيل كل شيء في Factory</li>
+              </ol>
+              <p className="mt-1 text-orange-600 font-medium">
+                ⚠️ بعد الإنشاء: اذهب إلى Remix → Compliance → authorizeToken()
+                وأدخل عنوان التوكن الجديد
+              </p>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
@@ -544,7 +669,7 @@ const CreateCampaign = () => {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     ></path>
                   </svg>
-                  Creating Campaign...
+                  Creating Campaign... (Step {step}/4)
                 </span>
               ) : (
                 "🚀 Create Campaign"
