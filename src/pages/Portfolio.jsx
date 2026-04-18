@@ -5,19 +5,16 @@ import {
   Building2,
   AlertCircle,
   RefreshCw,
-  ExternalLink,
   Coins,
   ArrowUpRight,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ethers } from "ethers";
+import { supabase } from "../lib/supabaseClient";
 
-// ------------------------------------------------------------------
-// ⚙️ Configuration and ABIs
-// ------------------------------------------------------------------
+// ─── Config ──────────────────────────────────────────────────────────────────
 const FACTORY_ADDRESS = import.meta.env.VITE_FACTORY_CONTRACT_ADDRESS;
-const RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL;
-const PRIVATE_KEY = import.meta.env.VITE_PRIVATE_KEY;
+const RPC_URL = import.meta.env.VITE_LOCAL_RPC_URL;
 
 const FACTORY_ABI = [
   "function getAllCampaigns() view returns (tuple(address campaignAddress, address owner, address tokenAddress, uint256 goal, uint256 startAt, uint256 endAt, string title, string description, string image, uint256 tokenWeiRate)[])",
@@ -30,12 +27,10 @@ const CAMPAIGN_ABI = [
 
 const TOKEN_ABI = [
   "function symbol() view returns (string)",
-  "function decimals() view returns (uint8)",
+  "function balanceOf(address) view returns (uint256)",
 ];
 
-// ------------------------------------------------------------------
-// 🛠️ Formatting Functions
-// ------------------------------------------------------------------
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 const formatNumber = (num) => {
   if (!num) return "0";
   if (num >= 1e9) return (num / 1e9).toFixed(2) + "B";
@@ -46,14 +41,13 @@ const formatNumber = (num) => {
   );
 };
 
-// ------------------------------------------------------------------
-// 🚀 Main Component
-// ------------------------------------------------------------------
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function PortfolioPage() {
   const [allocations, setAllocations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [totalTokens, setTotalTokens] = useState(0);
+  const [userAddress, setUserAddress] = useState("");
 
   useEffect(() => {
     fetchAllocations();
@@ -65,13 +59,28 @@ export default function PortfolioPage() {
       setError(null);
       setAllocations([]);
 
-      if (!FACTORY_ADDRESS || !RPC_URL || !PRIVATE_KEY) {
-        throw new Error("Missing connection data");
+      // ─── جيب المستخدم الحالي من Supabase ─────────────────────────────
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError || !user) throw new Error("Please log in first");
+
+      const { data: walletData, error: walletError } = await supabase
+        .from("wallets")
+        .select("wallet_address")
+        .eq("user_id", user.id)
+        .single();
+
+      if (walletError || !walletData?.wallet_address) {
+        throw new Error("Wallet not found. Please contact support.");
       }
 
+      const userAddr = walletData.wallet_address;
+      setUserAddress(userAddr);
+
+      // ─── اتصل بالشبكة ─────────────────────────────────────────────────
       const provider = new ethers.JsonRpcProvider(RPC_URL);
-      const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-      const userAddress = wallet.address;
 
       const factoryContract = new ethers.Contract(
         FACTORY_ADDRESS,
@@ -91,26 +100,23 @@ export default function PortfolioPage() {
             provider,
           );
 
-          // 1. Fetch contribution
+          // تحقق من الاستثمار
           const contributionWei =
-            await campaignContract.contributions(userAddress);
-
+            await campaignContract.contributions(userAddr);
           if (contributionWei === 0n) continue;
 
-          // 2. Fetch rate and calculate
+          // احسب التوكنز
           const tokenWeiRate = await campaignContract.tokenWeiRate();
           const contributionEth = parseFloat(
             ethers.formatEther(contributionWei),
           );
           const rateEth = parseFloat(ethers.formatEther(tokenWeiRate || 1n));
+          let calculatedTokenCount =
+            rateEth > 0 ? contributionEth / rateEth : 0;
 
-          let calculatedTokenCount = 0;
-          if (rateEth > 0) {
-            calculatedTokenCount = contributionEth / rateEth;
-          }
-
-          // 3. Fetch symbol
+          // جيب الـ symbol والـ balance الحقيقي
           let symbol = "TOKEN";
+          let realBalance = null;
           if (
             campaign.tokenAddress &&
             campaign.tokenAddress !== ethers.ZeroAddress
@@ -122,21 +128,26 @@ export default function PortfolioPage() {
                 provider,
               );
               symbol = await tokenContract.symbol();
-            } catch (e) {
-              console.warn("Could not fetch symbol");
+              const bal = await tokenContract.balanceOf(userAddr);
+              realBalance = Number(bal);
+            } catch {
+              console.warn("Could not fetch token info");
             }
           }
 
-          totalTokensCount += calculatedTokenCount;
+          const tokensToShow =
+            realBalance !== null ? realBalance : calculatedTokenCount;
+          totalTokensCount += tokensToShow;
 
           myAllocations.push({
             id: campaign.campaignAddress,
-            title: campaign.title,
+            title: campaign.title || "Real Estate Campaign",
             image: campaign.image || "https://placehold.co/600x400",
-            tokens: calculatedTokenCount,
-            symbol: symbol,
+            tokens: tokensToShow,
+            symbol,
             tokenAddress: campaign.tokenAddress,
             campaignAddress: campaign.campaignAddress,
+            contributionEth: contributionEth.toFixed(4),
           });
         } catch (err) {
           console.warn("Error processing campaign:", err);
@@ -155,8 +166,9 @@ export default function PortfolioPage() {
 
   if (error) {
     return (
-      <div className="flex justify-center items-center h-64 text-red-600">
-        <AlertCircle className="mr-2" /> {error}
+      <div className="flex flex-col justify-center items-center h-64 text-red-600 gap-2">
+        <AlertCircle className="w-8 h-8" />
+        <p>{error}</p>
       </div>
     );
   }
@@ -171,9 +183,11 @@ export default function PortfolioPage() {
               <Wallet className="text-blue-600" />
               My Investment Portfolio
             </h1>
-            <p className="text-slate-500 mt-1">
-              View token allocations owned and calculated from campaigns
-            </p>
+            {userAddress && (
+              <p className="text-slate-400 text-xs mt-1 font-mono">
+                {userAddress.slice(0, 6)}...{userAddress.slice(-4)}
+              </p>
+            )}
           </div>
           <button
             onClick={fetchAllocations}
@@ -187,7 +201,7 @@ export default function PortfolioPage() {
           </button>
         </div>
 
-        {/* Stats Cards */}
+        {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
           <Card className="bg-white border-none shadow-sm">
             <CardContent className="p-6 flex items-center justify-between">
@@ -222,7 +236,7 @@ export default function PortfolioPage() {
           </Card>
         </div>
 
-        {/* List of Allocations */}
+        {/* List */}
         <div className="space-y-4">
           {isLoading ? (
             <div className="space-y-4">
@@ -240,16 +254,17 @@ export default function PortfolioPage() {
                 className="overflow-hidden hover:shadow-md transition bg-white border border-slate-100"
               >
                 <div className="flex items-center p-4">
-                  {/* Image */}
                   <div className="w-20 h-20 md:w-24 md:h-24 shrink-0 rounded-lg overflow-hidden bg-slate-200 mr-4">
                     <img
                       src={item.image}
                       alt={item.title}
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.target.src = "https://placehold.co/600x400";
+                      }}
                     />
                   </div>
 
-                  {/* Details */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="text-lg font-bold text-slate-900 truncate">
@@ -259,27 +274,24 @@ export default function PortfolioPage() {
                         {item.symbol}
                       </span>
                     </div>
-                    <p className="text-sm text-slate-500 truncate mb-2">
-                      Contract: {item.tokenAddress.slice(0, 6)}...
+                    <p className="text-sm text-slate-500 truncate mb-1">
+                      Token: {item.tokenAddress.slice(0, 6)}...
                       {item.tokenAddress.slice(-4)}
                     </p>
-
-                    {/* Etherscan Link */}
+                    <p className="text-xs text-emerald-600 font-medium mb-2">
+                      Invested: {item.contributionEth} ETH
+                    </p>
                     <a
-                      href={`https://sepolia.etherscan.io/token/${item.tokenAddress}`}
-                      target="_blank"
-                      rel="noreferrer"
+                      href={`#`}
                       className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline transition"
                     >
-                      View Contract on Etherscan{" "}
-                      <ArrowUpRight className="w-3 h-3" />
+                      View on Explorer <ArrowUpRight className="w-3 h-3" />
                     </a>
                   </div>
 
-                  {/* Token Count */}
                   <div className="text-right px-4 border-l border-slate-100 ml-4">
                     <p className="text-xs text-slate-400 mb-1 uppercase tracking-wider">
-                      Calculated Balance
+                      Balance
                     </p>
                     <p className="text-xl md:text-2xl font-bold text-slate-900">
                       {formatNumber(item.tokens)}{" "}
