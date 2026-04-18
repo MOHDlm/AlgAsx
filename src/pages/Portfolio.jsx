@@ -80,9 +80,11 @@ export default function PortfolioPage() {
       setUserAddress(userAddr);
 
       // ─── اتصل بالشبكة ─────────────────────────────────────────────────
-      const provider = new ethers.JsonRpcProvider({
-        url: RPC_URL,
-        headers: { "ngrok-skip-browser-warning": "true" },
+      const provider = new ethers.JsonRpcProvider(RPC_URL, undefined, {
+        staticNetwork: true,
+        fetchOptions: {
+          headers: { "ngrok-skip-browser-warning": "true" },
+        },
       });
 
       const factoryContract = new ethers.Contract(
