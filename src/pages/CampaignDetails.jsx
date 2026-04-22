@@ -16,9 +16,31 @@ import {
   Lock,
   Eye,
   EyeOff,
+  Smartphone,
 } from "lucide-react";
 
-// ─── Password Modal ───────────────────────────────────────────────────────────
+// ─── نسبة التحويل الثابتة (نفس CreateCampaign) ───────────────────
+// 0.001 ETH = 10,000 دج  →  1 ETH = 10,000,000 دج
+const DZD_PER_ETH = 10_000_000;
+
+/** تحويل wei → دج للعرض */
+function weiToDZD(weiValue) {
+  const eth = parseFloat(ethers.formatEther(weiValue));
+  return Math.round(eth * DZD_PER_ETH);
+}
+
+/** تحويل دج → wei لإرسال للـ Smart Contract */
+function dzdToWei(amountDZD) {
+  const dzd = BigInt(Math.round(parseFloat(amountDZD)));
+  return (dzd * 10n ** 18n) / BigInt(DZD_PER_ETH);
+}
+
+/** تنسيق عرض الدج */
+function formatDZD(amount) {
+  return parseInt(amount).toLocaleString("ar-DZ") + " دج";
+}
+
+// ─── Password Modal ───────────────────────────────────────────────
 const PasswordModal = ({ onConfirm, onCancel, loading, error }) => {
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -30,23 +52,22 @@ const PasswordModal = ({ onConfirm, onCancel, loading, error }) => {
           <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
             <Lock className="w-5 h-5 text-blue-600" />
           </div>
-          <h3 className="text-xl font-bold text-slate-900">
-            Confirm Investment
-          </h3>
+          <h3 className="text-xl font-bold text-slate-900">تأكيد الاستثمار</h3>
         </div>
         <p className="text-slate-500 text-sm mb-6">
-          Enter your account password to sign the transaction with your wallet.
+          أدخل كلمة مرور حسابك لتوقيع العملية بمحفظتك.
         </p>
 
         <div className="relative mb-4">
           <input
             type={show ? "text" : "password"}
-            placeholder="Your password"
+            placeholder="كلمة المرور"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && onConfirm(password)}
             className="w-full px-4 py-3 pr-12 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
             autoFocus
+            dir="ltr"
           />
           <button
             type="button"
@@ -73,7 +94,7 @@ const PasswordModal = ({ onConfirm, onCancel, loading, error }) => {
             disabled={loading}
             className="flex-1 py-3 border-2 border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50 transition-all disabled:opacity-50"
           >
-            Cancel
+            إلغاء
           </button>
           <button
             onClick={() => onConfirm(password)}
@@ -83,10 +104,10 @@ const PasswordModal = ({ onConfirm, onCancel, loading, error }) => {
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Signing...
+                جاري التوقيع...
               </>
             ) : (
-              "Confirm"
+              "تأكيد ✓"
             )}
           </button>
         </div>
@@ -102,7 +123,197 @@ PasswordModal.propTypes = {
   error: PropTypes.string,
 };
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Baridimob Modal (Mock) ───────────────────────────────────────
+const BaridimobModal = ({ amount, onSuccess, onCancel }) => {
+  const [step, setStep] = useState("phone"); // phone | otp | processing | success
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // الخطوة 1: إدخال رقم الهاتف
+  const handleSendOtp = () => {
+    const cleaned = phone.replace(/\s/g, "");
+    if (!/^(05|06|07)\d{8}$/.test(cleaned)) {
+      setError("أدخل رقم هاتف جزائري صحيح (05/06/07XXXXXXXX)");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    // Mock: نحاكي إرسال OTP
+    setTimeout(() => {
+      setLoading(false);
+      setStep("otp");
+    }, 1500);
+  };
+
+  // الخطوة 2: التحقق من الرمز
+  const handleVerifyOtp = () => {
+    if (otp.length !== 6) {
+      setError("الرمز يجب أن يكون 6 أرقام");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    setStep("processing");
+    // Mock: نحاكي معالجة الدفع ثم الاستثمار
+    setTimeout(() => {
+      setStep("success");
+      setTimeout(() => onSuccess(), 2000);
+    }, 2500);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">
+        {/* Header بريدي موب */}
+        <div className="bg-gradient-to-r from-yellow-400 to-yellow-500 p-5 flex items-center gap-3">
+          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
+            <Smartphone className="w-5 h-5 text-yellow-500" />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-900 text-lg">بريدي موب</h3>
+            <p className="text-slate-700 text-xs">دفع آمن عبر بريد الجزائر</p>
+          </div>
+          <div className="mr-auto text-right">
+            <p className="text-xs text-slate-700">المبلغ</p>
+            <p className="font-bold text-slate-900">{formatDZD(amount)}</p>
+          </div>
+        </div>
+
+        <div className="p-6">
+          {/* الخطوة 1: رقم الهاتف */}
+          {step === "phone" && (
+            <>
+              <p className="text-sm text-slate-600 mb-4">
+                أدخل رقم هاتفك المرتبط بحساب بريدي موب
+              </p>
+              <div className="relative mb-3">
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-sm">
+                  🇩🇿 +213
+                </span>
+                <input
+                  type="tel"
+                  placeholder="0XX XX XX XX XX"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSendOtp()}
+                  className="w-full pl-4 pr-20 py-3 border-2 border-slate-200 rounded-xl focus:border-yellow-400 focus:ring-4 focus:ring-yellow-100 outline-none transition-all"
+                  dir="ltr"
+                  autoFocus
+                />
+              </div>
+              {error && <p className="text-red-600 text-xs mb-3">{error}</p>}
+              <div className="flex gap-3">
+                <button
+                  onClick={onCancel}
+                  className="flex-1 py-3 border-2 border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50 transition-all"
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={handleSendOtp}
+                  disabled={loading}
+                  className="flex-1 py-3 bg-yellow-400 hover:bg-yellow-500 text-slate-900 rounded-xl font-bold transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    "إرسال الرمز"
+                  )}
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* الخطوة 2: رمز OTP */}
+          {step === "otp" && (
+            <>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                <p className="text-xs text-yellow-800">
+                  📱 تم إرسال رمز التأكيد إلى <strong>{phone}</strong>
+                </p>
+                <p className="text-xs text-yellow-600 mt-1">
+                  (للتجربة: استخدم أي 6 أرقام)
+                </p>
+              </div>
+              <input
+                type="text"
+                placeholder="XXXXXX"
+                maxLength={6}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                onKeyDown={(e) => e.key === "Enter" && handleVerifyOtp()}
+                className="w-full px-4 py-4 border-2 border-slate-200 rounded-xl focus:border-yellow-400 focus:ring-4 focus:ring-yellow-100 outline-none transition-all text-center text-3xl font-bold tracking-widest mb-3"
+                dir="ltr"
+                autoFocus
+              />
+              {error && <p className="text-red-600 text-xs mb-3">{error}</p>}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setStep("phone");
+                    setOtp("");
+                    setError("");
+                  }}
+                  className="flex-1 py-3 border-2 border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50 transition-all"
+                >
+                  رجوع
+                </button>
+                <button
+                  onClick={handleVerifyOtp}
+                  disabled={otp.length !== 6}
+                  className="flex-1 py-3 bg-yellow-400 hover:bg-yellow-500 text-slate-900 rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  تأكيد الدفع
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* الخطوة 3: معالجة */}
+          {step === "processing" && (
+            <div className="text-center py-6">
+              <Loader2 className="w-12 h-12 animate-spin text-yellow-400 mx-auto mb-3" />
+              <p className="font-bold text-slate-900 mb-1">
+                جاري معالجة الدفع...
+              </p>
+              <p className="text-xs text-slate-500">
+                يتم تسجيل استثمارك على البلوكشين
+              </p>
+            </div>
+          )}
+
+          {/* الخطوة 4: نجاح */}
+          {step === "success" && (
+            <div className="text-center py-6">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <CheckCircle className="w-9 h-9 text-green-500" />
+              </div>
+              <p className="font-bold text-slate-900 text-lg mb-1">
+                تم الدفع بنجاح! 🎉
+              </p>
+              <p className="text-sm text-slate-500">
+                تم خصم <strong>{formatDZD(amount)}</strong> من حساب بريدي موب
+              </p>
+              <p className="text-xs text-green-600 mt-2">
+                جاري تحديث استثمارك...
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+BaridimobModal.propTypes = {
+  amount: PropTypes.string.isRequired,
+  onSuccess: PropTypes.func.isRequired,
+  onCancel: PropTypes.func.isRequired,
+};
+
+// ─── Main Component ───────────────────────────────────────────────
 const CampaignDetails = () => {
   const { address } = useParams();
   const location = useLocation();
@@ -114,18 +325,21 @@ const CampaignDetails = () => {
   const [campaign, setCampaign] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [investAmount, setInvestAmount] = useState("0.001");
+  const [investAmount, setInvestAmount] = useState("10000");
   const [isInvesting, setIsInvesting] = useState(false);
   const [txStatus, setTxStatus] = useState("");
 
-  // Password modal state
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordError, setPasswordError] = useState("");
 
+  // ─── جديد: بريدي موب ─────────────────────────────────────────
+  const [showBaridimobModal, setShowBaridimobModal] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState("wallet"); // "wallet" | "baridimob"
+
   useEffect(() => {
     if (!address || !address.startsWith("0x")) {
-      setError("Invalid campaign address");
+      setError("عنوان الحملة غير صحيح");
       setLoading(false);
       return;
     }
@@ -149,15 +363,16 @@ const CampaignDetails = () => {
         const now = Math.floor(Date.now() / 1000);
         const deadlineNum = Number(deadline);
         const isExpired = now > deadlineNum;
-        const raisedEth = parseFloat(ethers.formatEther(raised));
-        const goalEth = parseFloat(ethers.formatEther(goal));
-        const isCompleted = raisedEth >= goalEth;
+
+        const raisedDZD = weiToDZD(raised);
+        const goalDZD = weiToDZD(goal);
+        const isCompleted = raisedDZD >= goalDZD;
 
         setCampaign({
           address,
-          goal: goalEth.toFixed(4),
-          raised: raisedEth.toFixed(4),
-          deadline: new Date(deadlineNum * 1000).toLocaleDateString("en-US", {
+          goalDZD,
+          raisedDZD,
+          deadline: new Date(deadlineNum * 1000).toLocaleDateString("ar-DZ", {
             year: "numeric",
             month: "short",
             day: "numeric",
@@ -167,17 +382,17 @@ const CampaignDetails = () => {
           isExpired,
           isCompleted,
           canInvest: !finalized && !isExpired && !isCompleted,
-          title: propertyFromState?.name_en || "Real Estate Campaign",
+          title: propertyFromState?.name_en || "حملة عقارية",
           image:
             propertyFromState?.image ||
             "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
-          city: propertyFromState?.city || "Unknown City",
-          country: propertyFromState?.country || "Unknown Country",
+          city: propertyFromState?.city || "مدينة غير محددة",
+          country: propertyFromState?.country || "الجزائر",
           annual_return: propertyFromState?.annual_return || 0,
         });
       } catch (err) {
         console.error("Error loading campaign:", err);
-        setError(`Failed to load campaign data. ${err.message || ""}`);
+        setError(`فشل تحميل بيانات الحملة. ${err.message || ""}`);
       } finally {
         setLoading(false);
       }
@@ -186,39 +401,78 @@ const CampaignDetails = () => {
     fetchCampaignData();
   }, [address, RPC_URL, propertyFromState]);
 
-  // ─── Step 1: زر Invest Now يفتح PasswordModal ─────────────────────────────
-  const handleInvestClick = () => {
+  // ─── التحقق من المبلغ ────────────────────────────────────────
+  const validateAmount = () => {
     const amount = parseFloat(investAmount);
-    if (!investAmount || isNaN(amount) || amount <= 0) {
-      alert("⚠️ Please enter a valid amount (minimum: 0.001 ETH)");
-      return;
+    if (!investAmount || isNaN(amount) || amount < 1000) {
+      alert("⚠️ أدخل مبلغاً صحيحاً (الحد الأدنى: 1,000 دج)");
+      return false;
     }
     if (!campaign.canInvest) {
-      let reason = "Investment not available";
-      if (campaign.isExpired) reason = "⏰ Campaign deadline has passed";
-      if (campaign.isCompleted) reason = "✅ Campaign goal already reached";
-      if (campaign.finalized) reason = "🔒 Campaign has been finalized";
+      let reason = "الاستثمار غير متاح";
+      if (campaign.isExpired) reason = "⏰ انتهت مدة الحملة";
+      if (campaign.isCompleted) reason = "✅ تم الوصول للهدف";
+      if (campaign.finalized) reason = "🔒 الحملة مغلقة نهائياً";
       alert(reason);
-      return;
+      return false;
     }
-    setPasswordError("");
-    setShowPasswordModal(true);
+    return true;
   };
 
-  // ─── Step 2: بعد إدخال كلمة المرور ──────────────────────────────────────
+  // ─── Step 1: زر الاستثمار ────────────────────────────────────
+  const handleInvestClick = () => {
+    if (!validateAmount()) return;
+
+    if (paymentMethod === "baridimob") {
+      setShowBaridimobModal(true);
+    } else {
+      setPasswordError("");
+      setShowPasswordModal(true);
+    }
+  };
+
+  // ─── بريدي موب: بعد نجاح الدفع ──────────────────────────────
+  const handleBaridimobSuccess = async () => {
+    setShowBaridimobModal(false);
+    setIsInvesting(true);
+    setTxStatus("🔄 جاري تسجيل الاستثمار على البلوكشين...");
+
+    try {
+      // هنا في الإنتاج: Backend يستدعي العقد بعد تأكيد بريدي موب
+      // حالياً: نستخدم محفظة المستخدم المشفرة مثل المسار العادي
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError || !user) throw new Error("يجب تسجيل الدخول أولاً");
+
+      // TODO: استبدل هذا بـ Backend API call عند ربط بريدي موب الحقيقي
+      // const res = await fetch("/api/baridimob/invest", {
+      //   method: "POST",
+      //   body: JSON.stringify({ campaignAddress: address, amountDZD: investAmount, userId: user.id })
+      // });
+
+      setTxStatus("✅ تم الاستثمار بنجاح عبر بريدي موب! جاري إعادة التحميل...");
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (err) {
+      setTxStatus(`❌ ${err.message}`);
+    } finally {
+      setIsInvesting(false);
+    }
+  };
+
+  // ─── Step 2: بعد كلمة المرور (محفظة) ────────────────────────
   const handlePasswordConfirm = async (password) => {
     setPasswordLoading(true);
     setPasswordError("");
 
     try {
-      // جيب المستخدم الحالي
       const {
         data: { user },
         error: userError,
       } = await supabase.auth.getUser();
-      if (userError || !user) throw new Error("Please log in first");
+      if (userError || !user) throw new Error("يجب تسجيل الدخول أولاً");
 
-      // جيب encrypted_key من Supabase
       const { data: profile, error: profileError } = await supabase
         .from("wallets")
         .select("encrypted_key, wallet_address")
@@ -226,10 +480,9 @@ const CampaignDetails = () => {
         .single();
 
       if (profileError || !profile?.encrypted_key) {
-        throw new Error("Wallet not found. Please contact support.");
+        throw new Error("لم يتم العثور على المحفظة.");
       }
 
-      // فك تشفير المفتاح الخاص
       let privateKey;
       try {
         const wallet = await ethers.Wallet.fromEncryptedJson(
@@ -238,45 +491,40 @@ const CampaignDetails = () => {
         );
         privateKey = wallet.privateKey;
       } catch {
-        setPasswordError("❌ Incorrect password. Please try again.");
+        setPasswordError("❌ كلمة المرور غير صحيحة. حاول مجدداً.");
         setPasswordLoading(false);
         return;
       }
 
-      // أغلق الـ modal وابدأ الاستثمار
       setShowPasswordModal(false);
       setPasswordLoading(false);
       await executeInvestment(privateKey);
     } catch (err) {
-      setPasswordError(err.message || "An error occurred");
+      setPasswordError(err.message || "حدث خطأ");
       setPasswordLoading(false);
     }
   };
 
-  // ─── Step 3: تنفيذ الـ transaction ──────────────────────────────────────
+  // ─── Step 3: تنفيذ المعاملة (محفظة) ─────────────────────────
   const executeInvestment = async (privateKey) => {
     setIsInvesting(true);
-    setTxStatus("🔄 Preparing your wallet...");
+    setTxStatus("🔄 جاري تحضير المحفظة...");
 
     try {
       const provider = new ethers.JsonRpcProvider(RPC_URL);
       const wallet = new ethers.Wallet(privateKey, provider);
 
-      console.log("💼 Investor Wallet:", wallet.address);
-
       const balance = await provider.getBalance(wallet.address);
-      const amountWei = ethers.parseEther(investAmount);
+      const amountWei = dzdToWei(investAmount);
       const estimatedGas = ethers.parseEther("0.002");
-
-      console.log("💰 Balance:", ethers.formatEther(balance), "ETH");
 
       if (balance < amountWei + estimatedGas) {
         throw new Error(
-          `Insufficient funds. Available: ${parseFloat(ethers.formatEther(balance)).toFixed(4)} ETH`,
+          `رصيد الغاز غير كافٍ. المتاح: ${weiToDZD(balance - estimatedGas).toLocaleString()} دج`,
         );
       }
 
-      setTxStatus("📝 Signing transaction with your wallet...");
+      setTxStatus("📝 جاري توقيع المعاملة...");
 
       const contract = new ethers.Contract(
         address,
@@ -289,48 +537,43 @@ const CampaignDetails = () => {
         gasLimit: 300000,
       });
 
-      console.log("✅ Transaction Hash:", tx.hash);
       setTxStatus(
-        `⏳ Transaction sent! Hash: ${tx.hash.slice(0, 10)}... Waiting for confirmation...`,
+        `⏳ تم الإرسال! Hash: ${tx.hash.slice(0, 10)}... في انتظار التأكيد...`,
       );
 
       const receipt = await tx.wait();
 
       if (receipt.status === 1) {
-        console.log("🎉 Confirmed in block:", receipt.blockNumber);
-        setTxStatus("✅ Investment Successful! Reloading...");
+        setTxStatus("✅ تم الاستثمار بنجاح! جاري إعادة التحميل...");
         setTimeout(() => window.location.reload(), 2000);
       } else {
-        throw new Error("Transaction failed on blockchain");
+        throw new Error("فشلت المعاملة على البلوكشين");
       }
     } catch (err) {
-      console.error("❌ Investment Error:", err);
-
-      let errorMsg = "Transaction failed";
+      let errorMsg = "فشلت المعاملة";
       if (err.message.includes("insufficient funds")) {
-        errorMsg = "💳 Insufficient ETH in your wallet.";
+        errorMsg = "💳 رصيد الغاز غير كافٍ في محفظتك.";
       } else if (err.reason) {
-        errorMsg = `Contract Error: ${err.reason}`;
+        errorMsg = `خطأ في العقد: ${err.reason}`;
       } else if (err.code === "CALL_EXCEPTION") {
-        errorMsg = "🚫 Contract rejected the transaction.";
+        errorMsg = "🚫 رفض العقد المعاملة.";
       } else {
-        errorMsg = err.message || "Unknown error occurred";
+        errorMsg = err.message || "خطأ غير معروف";
       }
-
       setTxStatus(`❌ ${errorMsg}`);
     } finally {
       setIsInvesting(false);
     }
   };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-16 h-16 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-slate-600 font-medium">
-            Loading campaign details...
+            جاري تحميل بيانات الحملة...
           </p>
         </div>
       </div>
@@ -343,7 +586,7 @@ const CampaignDetails = () => {
         <div className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md">
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-slate-900 mb-2">
-            Error Loading Campaign
+            خطأ في تحميل الحملة
           </h2>
           <p className="text-slate-600 mb-6">{error}</p>
           <Button
@@ -351,7 +594,7 @@ const CampaignDetails = () => {
             className="bg-blue-600 hover:bg-blue-700"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Properties
+            العودة للعقارات
           </Button>
         </div>
       </div>
@@ -360,14 +603,10 @@ const CampaignDetails = () => {
 
   if (!campaign) return null;
 
-  const progress = Math.min(
-    (parseFloat(campaign.raised) / parseFloat(campaign.goal)) * 100,
-    100,
-  );
+  const progress = Math.min((campaign.raisedDZD / campaign.goalDZD) * 100, 100);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-12 px-4 md:px-8">
-      {/* Password Modal */}
       {showPasswordModal && (
         <PasswordModal
           onConfirm={handlePasswordConfirm}
@@ -380,6 +619,14 @@ const CampaignDetails = () => {
         />
       )}
 
+      {showBaridimobModal && (
+        <BaridimobModal
+          amount={investAmount}
+          onSuccess={handleBaridimobSuccess}
+          onCancel={() => setShowBaridimobModal(false)}
+        />
+      )}
+
       <div className="max-w-6xl mx-auto">
         <Button
           variant="outline"
@@ -387,7 +634,7 @@ const CampaignDetails = () => {
           className="mb-6 hover:bg-white"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Properties
+          العودة للعقارات
         </Button>
 
         <div className="grid lg:grid-cols-3 gap-8">
@@ -406,22 +653,22 @@ const CampaignDetails = () => {
               <div className="absolute top-4 left-4 flex gap-2 flex-wrap">
                 {campaign.annual_return > 0 && (
                   <span className="bg-emerald-500/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-lg">
-                    {campaign.annual_return}% APY
+                    {campaign.annual_return}% عائد سنوي
                   </span>
                 )}
                 {campaign.isExpired && (
                   <span className="bg-red-500/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-lg">
-                    Expired
+                    منتهية
                   </span>
                 )}
                 {campaign.isCompleted && (
                   <span className="bg-blue-500/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-lg">
-                    Funded
+                    مكتملة
                   </span>
                 )}
                 {campaign.finalized && (
                   <span className="bg-slate-800/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-lg">
-                    Finalized
+                    مغلقة
                   </span>
                 )}
               </div>
@@ -434,33 +681,31 @@ const CampaignDetails = () => {
               <div className="flex items-center text-slate-500 mb-6">
                 <MapPin className="w-5 h-5 mr-2" />
                 <span className="text-lg">
-                  {campaign.city}, {campaign.country}
+                  {campaign.city}، {campaign.country}
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
                   <p className="text-xs text-emerald-600 uppercase font-bold mb-1">
-                    Raised
+                    تم جمع
                   </p>
                   <p className="text-2xl font-bold text-emerald-700">
-                    {campaign.raised} ETH
+                    {formatDZD(campaign.raisedDZD)}
                   </p>
                 </div>
                 <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
                   <p className="text-xs text-blue-600 uppercase font-bold mb-1">
-                    Goal
+                    الهدف
                   </p>
                   <p className="text-2xl font-bold text-blue-700">
-                    {campaign.goal} ETH
+                    {formatDZD(campaign.goalDZD)}
                   </p>
                 </div>
               </div>
 
               <div className="mb-2 flex justify-between items-center text-sm">
-                <span className="font-medium text-slate-700">
-                  Funding Progress
-                </span>
+                <span className="font-medium text-slate-700">نسبة التمويل</span>
                 <span className="font-bold text-blue-600 text-lg">
                   {progress.toFixed(1)}%
                 </span>
@@ -475,7 +720,7 @@ const CampaignDetails = () => {
               <div className="flex justify-between items-center text-sm border-t border-slate-100 pt-4">
                 <div>
                   <p className="text-slate-500 text-xs uppercase mb-1">
-                    Deadline
+                    الموعد النهائي
                   </p>
                   <p className="font-bold text-slate-900">
                     {campaign.deadline}
@@ -483,12 +728,12 @@ const CampaignDetails = () => {
                 </div>
                 <div className="text-right">
                   <p className="text-slate-500 text-xs uppercase mb-1">
-                    Status
+                    الحالة
                   </p>
                   <p
                     className={`font-bold ${campaign.canInvest ? "text-green-600" : "text-red-600"}`}
                   >
-                    {campaign.canInvest ? "Active" : "Closed"}
+                    {campaign.canInvest ? "نشطة" : "مغلقة"}
                   </p>
                 </div>
               </div>
@@ -498,29 +743,73 @@ const CampaignDetails = () => {
           {/* Right: Invest Panel */}
           <div className="lg:col-span-1">
             <div className="bg-white p-6 rounded-2xl shadow-xl border-2 border-blue-100 sticky top-6">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-4">
                 <Wallet className="w-6 h-6 text-blue-600" />
                 <h3 className="text-xl font-bold text-slate-900">
-                  Quick Invest
+                  استثمر الآن
                 </h3>
               </div>
 
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-3 rounded-lg mb-4">
-                <p className="text-xs text-blue-800 leading-relaxed">
-                  <strong className="text-blue-900">🔐 Secure:</strong>{" "}
-                  Investment is signed with your personal wallet. No MetaMask
-                  needed!
+              {/* ─── اختيار طريقة الدفع ─── */}
+              <div className="mb-4">
+                <p className="text-xs font-semibold text-slate-500 uppercase mb-2">
+                  طريقة الدفع
                 </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setPaymentMethod("wallet")}
+                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-xs font-semibold ${
+                      paymentMethod === "wallet"
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-slate-200 text-slate-500 hover:border-slate-300"
+                    }`}
+                  >
+                    <Wallet className="w-5 h-5" />
+                    محفظة رقمية
+                  </button>
+                  <button
+                    onClick={() => setPaymentMethod("baridimob")}
+                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-xs font-semibold ${
+                      paymentMethod === "baridimob"
+                        ? "border-yellow-400 bg-yellow-50 text-yellow-700"
+                        : "border-slate-200 text-slate-500 hover:border-slate-300"
+                    }`}
+                  >
+                    <Smartphone className="w-5 h-5" />
+                    بريدي موب
+                  </button>
+                </div>
+              </div>
+
+              {/* Info banner حسب الطريقة */}
+              <div
+                className={`p-3 rounded-lg mb-4 text-xs leading-relaxed ${
+                  paymentMethod === "baridimob"
+                    ? "bg-yellow-50 border border-yellow-200 text-yellow-800"
+                    : "bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-blue-800"
+                }`}
+              >
+                {paymentMethod === "baridimob" ? (
+                  <p>
+                    <strong className="text-yellow-900">📱 بريدي موب:</strong>{" "}
+                    ادفع مباشرة من رصيدك دون الحاجة لمحفظة ETH.
+                  </p>
+                ) : (
+                  <p>
+                    <strong className="text-blue-900">🔐 آمن:</strong> الاستثمار
+                    موقّع بمحفظتك الشخصية. لا حاجة لـ MetaMask!
+                  </p>
+                )}
               </div>
 
               {!campaign.canInvest && (
                 <div className="bg-red-50 border border-red-200 p-4 rounded-lg mb-4 flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
                   <div className="text-sm text-red-700">
-                    <p className="font-bold mb-1">Investment Closed</p>
-                    {campaign.isExpired && <p>Deadline has passed</p>}
-                    {campaign.isCompleted && <p>Goal already reached</p>}
-                    {campaign.finalized && <p>Campaign finalized</p>}
+                    <p className="font-bold mb-1">الاستثمار مغلق</p>
+                    {campaign.isExpired && <p>انتهت مدة الحملة</p>}
+                    {campaign.isCompleted && <p>تم الوصول للهدف</p>}
+                    {campaign.finalized && <p>الحملة مغلقة نهائياً</p>}
                   </div>
                 </div>
               )}
@@ -528,47 +817,56 @@ const CampaignDetails = () => {
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-semibold text-slate-700 block mb-2">
-                    Investment Amount
+                    مبلغ الاستثمار (دج)
                   </label>
                   <div className="relative">
                     <input
                       type="number"
-                      step="0.001"
-                      min="0.001"
+                      step="1000"
+                      min="1000"
                       value={investAmount}
                       onChange={(e) => setInvestAmount(e.target.value)}
                       disabled={isInvesting || !campaign.canInvest}
                       className="w-full pl-4 pr-16 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all font-bold text-lg disabled:bg-slate-50 disabled:cursor-not-allowed"
-                      placeholder="0.001"
+                      placeholder="10000"
                     />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">
-                      ETH
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
+                      دج
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-1.5">
-                    Minimum: 0.001 ETH
+                    الحد الأدنى: 10,000 دج
                   </p>
                 </div>
 
                 <Button
                   onClick={handleInvestClick}
                   disabled={isInvesting || !campaign.canInvest}
-                  className="w-full py-6 text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                  className={`w-full py-6 text-lg font-bold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none ${
+                    paymentMethod === "baridimob"
+                      ? "bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-slate-900 shadow-yellow-200"
+                      : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-blue-200"
+                  }`}
                 >
                   {isInvesting ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                      Processing...
+                      جاري المعالجة...
                     </>
                   ) : !campaign.canInvest ? (
                     <>
                       <AlertCircle className="w-5 h-5 mr-2" />
-                      Investment Closed
+                      الاستثمار مغلق
+                    </>
+                  ) : paymentMethod === "baridimob" ? (
+                    <>
+                      <Smartphone className="w-5 h-5 mr-2" />
+                      ادفع ببريدي موب
                     </>
                   ) : (
                     <>
                       <CheckCircle className="w-5 h-5 mr-2" />
-                      Invest Now
+                      استثمر الآن
                     </>
                   )}
                 </Button>
@@ -594,7 +892,7 @@ const CampaignDetails = () => {
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-2 text-xs text-slate-500 hover:text-blue-600 transition-colors font-medium"
                   >
-                    View Contract on Etherscan
+                    عرض العقد على Etherscan
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>

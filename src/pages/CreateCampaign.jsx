@@ -23,6 +23,23 @@ const TOKEN_CONTRACT_ABI = [
   "function owner() view returns (address)",
 ];
 
+// ─── نسبة التحويل الثابتة ────────────────────────────────────────
+// 0.001 ETH = 10,000 دج  →  1 ETH = 10,000,000 دج
+// هذه النسبة داخلية ثابتة، لا علاقة لها بسعر ETH في السوق
+const DZD_PER_ETH = 10_000_000n;
+
+/** تحويل دج → wei للإرسال للـ Smart Contract */
+function dzdToWei(amountDZD) {
+  const dzd = BigInt(Math.round(parseFloat(amountDZD)));
+  return (dzd * 10n ** 18n) / DZD_PER_ETH;
+}
+
+/** تحويل wei → دج للعرض (مساعد) */
+// eslint-disable-next-line no-unused-vars
+function weiToDZD(weiAmount) {
+  return (BigInt(weiAmount) * DZD_PER_ETH) / 10n ** 18n;
+}
+
 // ─── Popup كلمة المرور ────────────────────────────────────────────
 function PasswordModal({ onConfirm, onCancel, loading, error }) {
   const [password, setPassword] = useState("");
@@ -40,7 +57,6 @@ function PasswordModal({ onConfirm, onCancel, loading, error }) {
         <p className="text-gray-400 text-sm text-center mb-6">
           أدخل كلمة مرور حسابك لتوقيع العملية بمحفظتك
         </p>
-
         <input
           type="password"
           value={password}
@@ -51,13 +67,11 @@ function PasswordModal({ onConfirm, onCancel, loading, error }) {
           dir="ltr"
           autoFocus
         />
-
         {error && (
           <p className="text-red-400 text-xs text-center mb-3 bg-red-500/10 py-2 px-3 rounded-lg">
             {error}
           </p>
         )}
-
         <div className="flex gap-3">
           <button
             onClick={() => onConfirm(password)}
@@ -113,11 +127,18 @@ const CreateCampaign = () => {
 
   const navigate = useNavigate();
 
+  // حساب عدد التوكنز تلقائياً للعرض
+  const estimatedTokens =
+    goal && tokenRate && parseFloat(tokenRate) > 0
+      ? Math.floor(parseFloat(goal) / parseFloat(tokenRate)).toLocaleString(
+          "ar-DZ",
+        )
+      : null;
+
   // ─── جلب المحفظة من Supabase وفك التشفير ────────────────────
   const getWalletSigner = async (password) => {
     setPasswordLoading(true);
     setPasswordError("");
-
     try {
       const {
         data: { session },
@@ -149,26 +170,25 @@ const CreateCampaign = () => {
         fetchOptions: { headers: { "ngrok-skip-browser-warning": "true" } },
       });
       const signer = wallet.connect(provider);
-
       return { signer, walletAddress: walletData.wallet_address, provider };
     } finally {
       setPasswordLoading(false);
     }
   };
 
-  // ─── عند الضغط على Create Campaign ──────────────────────────
+  // ─── عند الضغط على إنشاء الحملة ──────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!tokenName.trim()) return setMessage("❌ Token Name مطلوب");
+    if (!tokenName.trim()) return setMessage("❌ اسم التوكن مطلوب");
     if (!tokenSymbol.trim() || tokenSymbol.length > 6)
-      return setMessage("❌ Token Symbol مطلوب (2-6 أحرف)");
-    if (!goal || isNaN(parseFloat(goal)))
-      return setMessage("❌ Funding Goal غير صحيح");
+      return setMessage("❌ رمز التوكن مطلوب (2-6 أحرف)");
+    if (!goal || isNaN(parseFloat(goal)) || parseFloat(goal) < 1000)
+      return setMessage("❌ هدف التمويل يجب أن يكون 1,000 دج على الأقل");
     if (!duration || isNaN(parseInt(duration)))
-      return setMessage("❌ Duration غير صحيح");
-    if (!tokenRate || isNaN(parseFloat(tokenRate)))
-      return setMessage("❌ Token Rate غير صحيح");
+      return setMessage("❌ المدة غير صحيحة");
+    if (!tokenRate || isNaN(parseFloat(tokenRate)) || parseFloat(tokenRate) < 1)
+      return setMessage("❌ سعر التوكن يجب أن يكون 1 دج على الأقل");
 
     const {
       data: { session },
@@ -182,16 +202,13 @@ const CreateCampaign = () => {
   // ─── بعد تأكيد كلمة المرور ───────────────────────────────────
   const handlePasswordConfirm = async (password) => {
     if (!password) return;
-
     try {
       const { signer, walletAddress, provider } =
         await getWalletSigner(password);
-
       setShowPasswordModal(false);
       setLoading(true);
       setMessage("");
       setStep(0);
-
       await createCampaign(signer, walletAddress, provider);
     } catch (err) {
       setPasswordError(err.message);
@@ -201,21 +218,36 @@ const CreateCampaign = () => {
   // ─── إنشاء الـ Campaign ───────────────────────────────────────
   const createCampaign = async (signer, walletAddress, provider) => {
     try {
-      const goalInWei = ethers.parseEther(String(parseFloat(goal)));
+      // تحويل دج → wei (نسبة ثابتة: 0.001 ETH = 10,000 دج)
+      const goalInWei = dzdToWei(goal);
+      const tokenRateValue = dzdToWei(tokenRate);
+      const totalValueInWei = totalValue ? dzdToWei(totalValue) : goalInWei;
       const durationInMinutes = parseInt(duration);
-      const tokenRateValue = ethers.parseEther(String(parseFloat(tokenRate)));
-      const totalValueInWei = totalValue
-        ? ethers.parseEther(String(parseFloat(totalValue)))
-        : goalInWei;
 
+      // log للمطور فقط — المستخدم لا يرى ETH
       const balance = await provider.getBalance(walletAddress);
-      console.log("💰 Balance:", ethers.formatEther(balance), "ETH");
+      console.log("💰 Gas Balance:", ethers.formatEther(balance), "ETH");
+      console.log(
+        "📊 Goal:",
+        parseFloat(goal).toLocaleString("ar-DZ"),
+        "دج →",
+        ethers.formatEther(goalInWei),
+        "ETH داخلي",
+      );
+      console.log(
+        "🪙 Token Rate:",
+        parseFloat(tokenRate).toLocaleString("ar-DZ"),
+        "دج →",
+        ethers.formatEther(tokenRateValue),
+        "ETH داخلي",
+      );
+
       if (balance === 0n)
-        throw new Error("رصيد المحفظة صفر — لا يكفي لرسوم الغاز");
+        throw new Error("رصيد الغاز صفر — لا يكفي لإنشاء الحملة");
 
       // ── Step 1: Deploy Token Contract ──────────────────────────
       setStep(1);
-      setMessage(`⏳ Step 1/3: Deploying Token Contract (${tokenSymbol})...`);
+      setMessage(`⏳ الخطوة 1/3: جاري نشر عقد التوكن (${tokenSymbol})...`);
 
       if (!TOKEN_BYTECODE) {
         throw new Error(
@@ -235,7 +267,6 @@ const CreateCampaign = () => {
         TOKEN_BYTECODE,
         signer,
       );
-
       const tokenContract = await tokenFactory.deploy(
         tokenName,
         tokenSymbol.toUpperCase(),
@@ -247,7 +278,6 @@ const CreateCampaign = () => {
         docHash,
         { gasLimit: 5000000 },
       );
-
       await tokenContract.waitForDeployment();
       const tokenAddress = await tokenContract.getAddress();
       console.log("✅ Token deployed at:", tokenAddress);
@@ -255,19 +285,17 @@ const CreateCampaign = () => {
       // ── Step 2: Deploy Campaign Contract ───────────────────────
       setStep(2);
       setMessage(
-        `⏳ Step 2/3: Deploying Campaign Contract...\nToken: ${tokenAddress}`,
+        `⏳ الخطوة 2/3: جاري نشر عقد الحملة...\nعنوان التوكن: ${tokenAddress}`,
       );
 
-      if (!CAMPAIGN_BYTECODE) {
+      if (!CAMPAIGN_BYTECODE)
         throw new Error("❌ VITE_CAMPAIGN_BYTECODE غير موجود في .env");
-      }
 
       const campaignFactory = new ethers.ContractFactory(
         CAMPAIGN_CONTRACT_ABI,
         CAMPAIGN_BYTECODE,
         signer,
       );
-
       const config = {
         tokenAddress,
         identityRegistry: IDENTITY_CONTRACT_ADDRESS,
@@ -275,28 +303,24 @@ const CreateCampaign = () => {
         durationMinutes: BigInt(durationInMinutes),
         tokenWeiRate: tokenRateValue,
       };
-
       const campaignContract = await campaignFactory.deploy(
         walletAddress,
         config,
         { gasLimit: 5000000 },
       );
-
       await campaignContract.waitForDeployment();
       const campaignAddress = await campaignContract.getAddress();
       console.log("✅ Campaign deployed at:", campaignAddress);
 
-      // ── Step 2b: Grant Campaign MINTER role on Token ───────────
+      // ── Step 2b: Grant MINTER role ─────────────────────────────
       setMessage(
-        `⏳ Step 2/3: Granting mint permission to Campaign...\nCampaign: ${campaignAddress}`,
+        `⏳ الخطوة 2/3: منح صلاحية الإصدار للحملة...\nالحملة: ${campaignAddress}`,
       );
-
       const tokenContractInstance = new ethers.Contract(
         tokenAddress,
         TOKEN_CONTRACT_ABI,
         signer,
       );
-
       const setMinterTx = await tokenContractInstance.setMinter(
         campaignAddress,
         true,
@@ -308,7 +332,7 @@ const CreateCampaign = () => {
       // ── Step 3: Register in Factory ────────────────────────────
       setStep(3);
       setMessage(
-        `⏳ Step 3/3: Registering in Factory...\nCampaign: ${campaignAddress}`,
+        `⏳ الخطوة 3/3: تسجيل في المصنع...\nالحملة: ${campaignAddress}`,
       );
 
       const factoryContract = new ethers.Contract(
@@ -316,7 +340,6 @@ const CreateCampaign = () => {
         FACTORY_CONTRACT_ABI,
         signer,
       );
-
       const isApproved =
         await factoryContract.approvedDevelopers(walletAddress);
       const ownerAddress = await factoryContract.owner();
@@ -332,12 +355,11 @@ const CreateCampaign = () => {
 
       const params = {
         campaignAddress,
-        tokenAddress, // ← الآن عنوان التوكن الجديد
+        tokenAddress,
         goal: goalInWei,
         durationMinutes: BigInt(durationInMinutes),
         tokenWeiRate: tokenRateValue,
       };
-
       const meta = {
         title,
         description,
@@ -353,25 +375,22 @@ const CreateCampaign = () => {
       const tx = await factoryContract.registerCampaign(params, meta, {
         gasLimit: 5000000,
       });
-      setMessage(
-        `⏳ Waiting for confirmation... TX: ${tx.hash.slice(0, 12)}...`,
-      );
+      setMessage(`⏳ في انتظار التأكيد... TX: ${tx.hash.slice(0, 12)}...`);
       await tx.wait();
 
       setStep(4);
       setMessage(
-        `✅ Campaign created successfully!\n🪙 Token (${tokenSymbol}): ${tokenAddress}\n📍 Campaign: ${campaignAddress}\n\n⚠️ تذكر: أضف Token في Compliance عبر authorizeToken()`,
+        `✅ تم إنشاء الحملة بنجاح!\n🪙 التوكن (${tokenSymbol}): ${tokenAddress}\n📍 الحملة: ${campaignAddress}\n\n⚠️ تذكر: أضف التوكن في Compliance عبر authorizeToken()`,
       );
       setTimeout(() => navigate("/properties"), 3000);
     } catch (error) {
       console.error("❌ Error:", error);
-      let errorMsg = error.message || "Failed to create campaign";
-      if (error.message?.includes("Not an approved developer")) {
+      let errorMsg = error.message || "فشل إنشاء الحملة";
+      if (error.message?.includes("Not an approved developer"))
         errorMsg =
           "حسابك غير معتمد. اطلب من المالك تنفيذ approveDeveloper() أولاً.";
-      } else if (error.message?.includes("insufficient funds")) {
-        errorMsg = "رصيد ETH غير كافٍ لرسوم الغاز";
-      }
+      else if (error.message?.includes("insufficient funds"))
+        errorMsg = "رصيد الغاز غير كافٍ";
       setMessage(`❌ ${errorMsg}`);
     } finally {
       setLoading(false);
@@ -380,10 +399,10 @@ const CreateCampaign = () => {
 
   const stepLabels = [
     "",
-    `Deploying Token (${tokenSymbol || "TOKEN"})...`,
-    "Deploying Campaign + Setting Minter...",
-    "Registering in Factory...",
-    "Done! ✅",
+    `جاري نشر التوكن (${tokenSymbol || "TOKEN"})...`,
+    "جاري نشر الحملة + منح صلاحية الإصدار...",
+    "جاري التسجيل في المصنع...",
+    "اكتمل! ✅",
   ];
 
   return (
@@ -404,12 +423,12 @@ const CreateCampaign = () => {
         <div className="bg-white rounded-xl shadow-lg p-8">
           <div className="mb-8">
             <h2 className="text-3xl font-bold text-gray-900 mb-2">
-              Create New Property Campaign 🏗️
+              إنشاء حملة عقارية جديدة 🏗️
             </h2>
             <p className="text-gray-600">كل حملة تنشئ توكن خاص بها تلقائياً</p>
             <div className="mt-3 inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-3 py-1 rounded-full text-sm font-medium">
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              Embedded Wallet — No MetaMask Needed ✅
+              محفظة مدمجة — لا حاجة لـ MetaMask ✅
             </div>
           </div>
 
@@ -436,7 +455,7 @@ const CreateCampaign = () => {
             onSubmit={handleSubmit}
             className="space-y-5"
           >
-            {/* ── Token Info Section ── */}
+            {/* ── Token Info ── */}
             <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl">
               <h3 className="text-sm font-bold text-orange-700 mb-3 flex items-center gap-2">
                 🪙 معلومات التوكن — كل حملة لها توكن خاص
@@ -444,20 +463,20 @@ const CreateCampaign = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    Token Name *
+                    اسم التوكن *
                   </label>
                   <input
                     type="text"
                     value={tokenName}
                     onChange={(e) => setTokenName(e.target.value)}
-                    placeholder="e.g., Algiers Apartment Token"
+                    placeholder="مثال: Algiers Apartment Token"
                     required
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    Token Symbol * (2-6 أحرف)
+                    رمز التوكن * (2-6 أحرف)
                   </label>
                   <input
                     type="text"
@@ -465,7 +484,7 @@ const CreateCampaign = () => {
                     onChange={(e) =>
                       setTokenSymbol(e.target.value.toUpperCase().slice(0, 6))
                     }
-                    placeholder="e.g., AAT"
+                    placeholder="مثال: AAT"
                     required
                     maxLength={6}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition font-mono"
@@ -477,13 +496,13 @@ const CreateCampaign = () => {
             {/* ── Property Info ── */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Property Title *
+                عنوان العقار *
               </label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Luxury Apartment Downtown Algiers"
+                placeholder="مثال: شقة فاخرة وسط الجزائر العاصمة"
                 required
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
@@ -491,12 +510,12 @@ const CreateCampaign = () => {
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Description *
+                الوصف *
               </label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe your property..."
+                placeholder="صف العقار..."
                 required
                 rows="3"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
@@ -506,7 +525,7 @@ const CreateCampaign = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                  Property ID
+                  رقم العقار
                 </label>
                 <input
                   type="text"
@@ -518,88 +537,104 @@ const CreateCampaign = () => {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                  Location
+                  الموقع
                 </label>
                 <input
                   type="text"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  placeholder="Algiers, Algeria"
+                  placeholder="الجزائر العاصمة، الجزائر"
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
               </div>
             </div>
 
+            {/* ── حقول الدينار الجزائري ── */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                  Funding Goal (ETH) *
+                  هدف التمويل (دج) *
                 </label>
                 <input
                   type="number"
-                  step="0.001"
-                  min="0.001"
+                  step="1000"
+                  min="1000"
                   value={goal}
                   onChange={(e) => setGoal(e.target.value)}
-                  placeholder="e.g., 10"
+                  placeholder="مثال: 5000000"
                   required
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
+                {goal && (
+                  <p className="mt-1 text-xs text-blue-600 font-medium">
+                    {parseFloat(goal).toLocaleString("ar-DZ")} دج
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                  Total Property Value (ETH)
+                  القيمة الكاملة للعقار (دج)
                 </label>
                 <input
                   type="number"
-                  step="0.001"
+                  step="1000"
                   min="0"
                   value={totalValue}
                   onChange={(e) => setTotalValue(e.target.value)}
-                  placeholder="e.g., 50"
+                  placeholder="مثال: 50000000"
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
+                {totalValue && (
+                  <p className="mt-1 text-xs text-blue-600 font-medium">
+                    {parseFloat(totalValue).toLocaleString("ar-DZ")} دج
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                  Duration (minutes) *
+                  المدة (بالدقائق) *
                 </label>
                 <input
                   type="number"
                   min="1"
                   value={duration}
                   onChange={(e) => setDuration(e.target.value)}
-                  placeholder="43200 = 30 days"
+                  placeholder="43200 = 30 يوم"
                   required
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
                 <p className="mt-1 text-xs text-gray-400">
-                  1440=1day · 10080=1week
+                  1440=يوم · 10080=أسبوع · 43200=شهر
                 </p>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                  Token Rate (ETH per token) *
+                  سعر التوكن الواحد (دج) *
                 </label>
                 <input
                   type="number"
-                  step="0.0001"
-                  min="0.0001"
+                  step="1"
+                  min="1"
                   value={tokenRate}
                   onChange={(e) => setTokenRate(e.target.value)}
-                  placeholder="e.g., 0.001"
+                  placeholder="مثال: 50"
                   required
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
+                {estimatedTokens && (
+                  <p className="mt-1 text-xs text-green-600 font-medium">
+                    ← عدد التوكنز الكلي: {estimatedTokens}
+                  </p>
+                )}
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Image URL (optional)
+                رابط الصورة (اختياري)
               </label>
               <input
                 type="text"
@@ -612,13 +647,13 @@ const CreateCampaign = () => {
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Document Hash (IPFS)
+                هاش الوثيقة (IPFS)
               </label>
               <input
                 type="text"
                 value={documentHash}
                 onChange={(e) => setDocumentHash(e.target.value)}
-                placeholder="QmXxx... (optional)"
+                placeholder="QmXxx... (اختياري)"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>
@@ -627,11 +662,14 @@ const CreateCampaign = () => {
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
               <strong>📋 ما سيحدث عند الإنشاء:</strong>
               <ol className="mt-1 list-decimal list-inside space-y-0.5">
-                <li>نشر Token contract جديد ({tokenSymbol || "TOKEN"})</li>
-                <li>نشر Campaign contract وربطه بالتوكن</li>
-                <li>منح Campaign صلاحية mint للتوكن تلقائياً</li>
-                <li>تسجيل كل شيء في Factory</li>
+                <li>نشر عقد التوكن الجديد ({tokenSymbol || "TOKEN"})</li>
+                <li>نشر عقد الحملة وربطه بالتوكن</li>
+                <li>منح الحملة صلاحية إصدار التوكنز تلقائياً</li>
+                <li>تسجيل كل شيء في المصنع</li>
               </ol>
+              <p className="mt-2 text-gray-500 font-medium">
+                💱 نسبة التحويل الداخلية الثابتة: 0.001 ETH = 10,000 دج
+              </p>
               <p className="mt-1 text-orange-600 font-medium">
                 ⚠️ بعد الإنشاء: اذهب إلى Remix → Compliance → authorizeToken()
                 وأدخل عنوان التوكن الجديد
@@ -669,10 +707,10 @@ const CreateCampaign = () => {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     ></path>
                   </svg>
-                  Creating Campaign... (Step {step}/4)
+                  جاري الإنشاء... (الخطوة {step}/4)
                 </span>
               ) : (
-                "🚀 Create Campaign"
+                "🚀 إنشاء الحملة"
               )}
             </button>
 
